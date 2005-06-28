@@ -2,11 +2,10 @@
     <name>OCAL Helper</name>
     <id>http://openclipart.org</id>
 	<dependency type="executable" location="extensions">ocal.py</dependency>
-	<dependency type="executable" location="absolute">/usr/bin/python</dependency>
     <effect>
 		<object-type>all</object-type>
     </effect>
     <script>
-        <command reldir="extensions">ocal.py</command>
+        <command reldir="extensions" interpreter="python">ocal.py</command>
     </script>
 </inkscape-extension>
