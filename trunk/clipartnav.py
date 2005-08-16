@@ -4,13 +4,13 @@ import gtk
 import pygtk
 import gtk.glade
 import tempfile
-import libxml2 # The code needs to be moved to pyxml at some point
 import ConfigParser
 import subprocess
 import os
 import cStringIO
 import sys
 import getopt
+from xml.dom import minidom
 
 class Searcher:
 	"Abstracts away the process of searching different repositories and aggregating their results"
@@ -82,43 +82,14 @@ class Searcher:
 							allHashes.append(hash)
 							xml, metadata = repo.getImage(ID)
 							if metadata is None:
-								metadata = getMetadata(xml)
-							allImages.append(xml, metadata) # an xml, metadata duple
+#								FIXME: Parse the metdata dynamically here
+								metadata = {}
+							allImages.append((xml, metadata)) # an xml, metadata duple
 							if self.maxResults and len(allHashes) == self.maxResults:
 								raise MaxResults
 		except MaxResults:
 			pass
 		return allImages # a list of xml, metadata duples
-
-	def getMetadata(xml):
-		"Given an xml document, get the rdf dc title value"
-	
-		metadata = {}
-	
-		doc = libxml2.parseDoc(xml)
-		xp = doc.xpathNewContext()
-		xp.xpathRegisterNs('svg', 'http://www.w3.org/2000/svg')
-		xp.xpathRegisterNs('rdf', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#')
-		xp.xpathRegisterNs('cc', 'http://web.resource.org/cc/')
-		xp.xpathRegisterNs('dc', 'http://purl.org/dc/elements/1.1/')
-	
-		results = xp.xpathEval('//svg:metadata/rdf:RDF/cc:Work/dc:title')
-		if len(results) == 1:
-			metadata['title'] = results[0].getContent()
-	
-		results = xp.xpathEval('//svg:metadata/rdf:RDF/cc:Work/dc:creator/cc:Agent/dc:title')
-		if len(results) == 1:
-			metadata['artist'] = results[0].getContent()
-	
-		results = xp.xpathEval('//svg:metadata/rdf:RDF/cc:Work/dc:description')
-		if len(results) == 1:
-			metadata['description'] = results[0].getContent()
-	
-		results = xp.xpathEval('//svg:metadata/rdf:RDF/cc:Work/dc:subject/rdf:Bag/rdf:li')
-		if len(results) > 0:
-			metadata['keywords'] = tuple([elem.getContent() for elem in results])
-	
-		return metadata
 
 class Renderer:
 	"Given svg data and a size, returns a gdk pixbuf rendering of it"
@@ -195,7 +166,7 @@ class Interface(object):
 	smallsize = 80 	# Dimensions of browse icons
 	largesize = 240	# Dimensions of preview images 
 
-	def __init__(self, config, searcher, renderer, outFile=None):
+	def __init__(self, config, searcher, renderer, outFile=None, inkscape=False, filename=None):
 		"Modules is a list of repository module api objects used for querying"
 
 		self.config = config
@@ -206,6 +177,9 @@ class Interface(object):
 
 		assert callable(renderer)
 		self.makePixbuf = renderer
+
+		self.inkscape = inkscape
+		self.filename = filename
 
 		self.xml = gtk.glade.XML('clipartnav.glade')
 		self.xml.signal_autoconnect(self)
@@ -383,14 +357,26 @@ class Interface(object):
 		self.statusbar.push(self.statuscontext, msg)
 		gtk.main_iteration()
 
-#	This function, clearly, needs humungous work
 	def on_iconview_item_activated(self, widget, path):
-		#origxml = minidom.parseString(sys.stdin.read())
 		imgXML = self.store[path[0]][0]
+		if not self.inkscape:
+			output =  imgXML
+		else: # If we're supposed to insert the clipart into an image provided on stdin
+			inputDoc = minidom.parseString(file(self.filename).read()).documentElement
+#			If the clipart svg cannot be parsed, this won't work...
+			newPic = minidom.parseString(imgXML).documentElement
+			try:
+				newPic.removeAttribute('height')
+			except:
+				pass
+			newPic.setAttribute('width', '50%')
+			inputDoc.appendChild(newPic)
+			output = inputDoc.toxml()
+			
 		if self.outFile is None:
-			print imgXML
+			print output
 		else:
-			file(self.outFile, 'w').write(imgXML)
+			file(self.outFile, 'w').write(output)
 		gtk.main_quit()
 
 	def on_iconview_selection_changed(self, widget, event=None):
@@ -433,11 +419,17 @@ class MaxResults(Exception):
 
 if __name__ == '__main__':
 	origDir = os.getcwd() # We switch to another dir to load modules, glade, etc., then switch back
-	opts, args = getopt.getopt(sys.argv[1:], 'f:')
+	opts, args = getopt.getopt(sys.argv[1:], 'f:', ('id='))
 	outFile = None # None means standard output, Inkscape style
+
+#	inkscape = False
+	inkscape = True # FIXME: a distinct inkscape mode needs to be detected via options, but can't get that to work right now... the options in the inx file get passed to the python cmd, not the script
+
 	for opt, value in opts:
 		if opt == '-f':
 			outFile = value
+		if opt == '--inkscape':
+			inkscape = True
 	
 	config = ConfigParser.SafeConfigParser()
 	configPaths = [os.path.expanduser('~/.inkscape/clipartnav.conf'), 'clipartnav.conf']
@@ -451,6 +443,6 @@ if __name__ == '__main__':
 	except NoRepositoriesError:
 		sys.exit('Error: no repositories were able to be loaded.  Check your config file and repository module dir')
 	renderer = Renderer(config)
-	interface = Interface(config, searcher, renderer, outFile=outFile)
+	interface = Interface(config, searcher, renderer, outFile=outFile, inkscape=inkscape, filename=args[0])
 	os.chdir(origDir) # We switch back to orig dir so that writing output to a file works as expected
 	gtk.main()
