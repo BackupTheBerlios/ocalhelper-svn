@@ -1,0 +1,11 @@
+<inkscape-extension>
+    <name>Clip Art Navigator</name>
+    <id>org.ocal</id>
+	<dependency type="executable" location="extensions">clipartnav.py</dependency>
+    <effect>
+		<object-type>path</object-type>
+    </effect>
+    <script>
+        <command reldir="extensions" interpreter="python">clipartnav.py</command>
+    </script>
+</inkscape-extension>

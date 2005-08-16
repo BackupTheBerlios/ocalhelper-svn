@@ -1,0 +1,70 @@
+Clip Art Navigator Design Notes
+
+OVERVIEW
+
+The searching functionality of the Clip Art Interface (CAN) is largely
+kept separated into different repository modules.  The CAN dispatches
+search requests to a Searcher object that stores a list of all the
+repository modules that are configured (this list of repositories is
+defined in the configuration file).  When the searcher object receives
+a query, it executes that query on each repository, removes
+duplicates, and returns the aggregated results.
+
+API
+
+The API for repository modules is simple.  Each python module must
+define an API class that provides two methods: query, and getImage.
+The query method takes a user query in some to-be-defined format (for
+now, it simply works as whitespace-delimited list of keywords), and
+returns a list of (ID, hash) duples representing search results, where
+the ID is some value that can be used to retrieve a specific image
+(using the getImage) method, and hash is the 32 character md5 hash (in
+hex characters) of the xml contents of the image.  The getImage method
+takes an ID value as returned by the query method, and returns a duple
+of the xml contents of the svg image, and a python dict of metadata
+values (None may be returned instead of the dict, in which case the
+client will parse the xml to retrieve the metadata).  
+
+SEARCHING
+
+When the CAN creates a searcher object, the searcher object imports
+each repository defined in the configuration file and instantiates an
+API object (providing a dict of values from that repository module's
+section in the config file as an argument).  When the searcher
+receives a search request, it invokes the query method on each
+repository API object IN THE SEQUENCE DEFINED IN THE CONFIGURATION
+FILE.  It tracks what matching images have been found already, and if
+a particular images (as identified by its md5 hash) has already been
+found by a previous repository, removes that image from the
+repositories search results.  It then runs the getImage method for
+each image in each repositories remaining results, and returns the
+aggregated list of (xml, metadata) duples.
+
+This system allows users to search multiple repositories
+simultaneously with ease, avoiding duplicated results (regardless of
+the particular means that various repositories use to internally
+identify images), and attempting to intelligently retrieve images from
+the repository that offers the best performance (assuming that the
+repository list in the configuration file is ordered intelligently).
+
+In the future, the author would like to implement an "iscache"
+modifier that can be applied to specific repositories via the
+configuration file.  If a repository is marked as iscache, an "add"
+method will be invoked whenever an image must be retrieved from a
+repository that follows it (unless another iscache repository is
+closer).  The add method will, of course, add that image to the
+repository.
+
+RENDERING
+
+The interface can render images in 2 ways: using native svg rendering
+functionality in GDK (i.e. librsvg), and using Inkscape to convert SVG images to PNGs
+and then rendering the PNGs with GDK.  This second method allows (er,
+will allow) the interface to be used on Windows (which does not let
+GDK display SVG images), with a performance penalty.  The renderer can
+be configured to render with GDK only, Inkscape only, or to try GDK
+and then fall back to Inkscape if GDK doesn't work (the default).
+These modes can be chosen between in the config file via the
+"renderinkscape" option (set to "always", "never", or "backup").  The
+interface also allows images to be previewed via Inkview (if
+available).
