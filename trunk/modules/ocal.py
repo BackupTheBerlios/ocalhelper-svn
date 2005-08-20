@@ -8,18 +8,41 @@ class API:
 	"An implementation of the clip art navigator repo api for ocal"
 
 	def __init__(self, config):
-		pass
+		if config.has_option('ocal', 'searchurl'):
+			self.url = config.get('ocal', 'searchurl')
+		else:
+			self.url = 'http//openclipart.org/cgi-bin/keyword_search.cgi'
+
+		if config.has_option('ocal', 'maxresults'):
+			self.maxresults = config.get('ocal', 'maxresults')
+		else:
+			self.maxresults = 10
 
 	def query(self, q):
 		"Given a query, return a list of (path, None) duples"
-		results = search(q)
-		return zip(results, itertools.repeat(None))
+		data = urllib.urlencode({'keywords':q, 'howmany':self.maxresults})
+		resultsPage = urllib.urlopen(self.url, data)
+		p = _Parser()
+		p.resultHrefs = []
+		p.feed(resultsPage.read())
+		return zip(p.resultHrefs, itertools.repeat(None))
 
 	def getImage(self, path):
-		"Given an image path (from the OCAL server root) return the svg xml contents"
+		"Given an image path return the svg xml contents"
 		xml = file(urllib.urlretrieve(path)[0]).read()
 		return (xml, None)
-		
+
+def getMetadata(svg):
+    metadata = {}
+    parser = expat.ParserCreate(namespace_separator=':')
+    m = Metadata()
+    parser.StartElementHandler = m.metadata_startElement
+    parser.EndElementHandler = m.metadata_endElement
+    parser.CharacterDataHandler = m.metadata_charData
+    parser.Parse(svg)
+    metadata['title'] = getattr(m, 'title', None)
+    metadata['keywords'] = getattr(m, 'keywords', [])
+    return metadata
 
 class Metadata:
     def __init__(self):
@@ -42,19 +65,7 @@ class Metadata:
             else:
 	        self.keywords.append(data)
         
-def getMetadata(svg):
-    metadata = {}
-    parser = expat.ParserCreate(namespace_separator=':')
-    m = Metadata()
-    parser.StartElementHandler = m.metadata_startElement
-    parser.EndElementHandler = m.metadata_endElement
-    parser.CharacterDataHandler = m.metadata_charData
-    parser.Parse(svg)
-    metadata['title'] = getattr(m, 'title', None)
-    metadata['keywords'] = getattr(m, 'keywords', [])
-    return metadata
-
-class Parser(HTMLParser.HTMLParser):
+class _Parser(HTMLParser.HTMLParser):
         
     resultHrefs = []
     flag = False
@@ -73,13 +84,3 @@ class Parser(HTMLParser.HTMLParser):
     def handle_endtag(self, tag):
         if tag == 'div':
             self.flag = False
-     
-def search(query):
-    'Given a keyword query, returns a list of (source url, preview image url) duples'
-    data = urllib.urlencode({'keywords':query, 'howmany':20})
-    url = 'http://openclipart.org/cgi-bin/keyword_search.cgi'
-    resultsPage = urllib.urlopen(url, data)
-    p = Parser()
-    p.resultHrefs = []
-    p.feed(resultsPage.read())
-    return p.resultHrefs

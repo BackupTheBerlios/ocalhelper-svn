@@ -171,53 +171,53 @@ class Renderer:
 
 if parseMetadata: # If PyXML is available, this func is can be a backup for repositories that don't provide metadata
     def getMetadata(xml):
-            "Given an xml document, get the rdf dc title value"
-            reader = PyExpat.Reader()
-            doc = reader.fromString(xml)
-            de = doc.documentElement
-            nss = {'svg':'http://www.w3.org/2000/svg',
-                    'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-                    'cc': 'http://web.resource.org/cc/',
-                    'dc': 'http://purl.org/dc/elements/1.1/'
-            }
+	    "Given an xml document, get the rdf dc title value"
+	    reader = PyExpat.Reader()
+	    doc = reader.fromString(xml)
+	    de = doc.documentElement
+	    nss = {'svg':'http://www.w3.org/2000/svg',
+		'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+		'cc': 'http://web.resource.org/cc/',
+		'dc': 'http://purl.org/dc/elements/1.1/'
+	    }
 
-            c = Context.Context(de, processorNss=nss)
-            
-            metadata = {}
+	    c = Context.Context(de, processorNss=nss)
 
-            try: # get title
-                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:title', context=c)
-                    if len(results) == 1:
-                            metadata['title'] = results[0].childNodes[0].__nodeValue
+	    metadata = {}
+
+	    try: # get title
+		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:title', context=c)
+		if len(results) == 1:
+		    metadata['title'] = results[0].childNodes[0].__nodeValue
             except Exception, e:
-                    print e
+		print e
 
-            try: # get artist
-                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:creator/cc:Agent/dc:title', context=c)
-                    if len(results) == 1:
-                            metadata['artist'] = results[0].childNodes[0].__nodeValue
-            except Exception, e:
-                    print e
+	    try: # get artist
+		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:creator/cc:Agent/dc:title', context=c)
+		if len(results) == 1:
+                	metadata['artist'] = results[0].childNodes[0].__nodeValue
+	    except Exception, e:
+	    	print e
 
-            try: # get description
-                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:description', context=c) 
-                    if len(results) == 1:
-                            metadata['description'] = results[0].childNodes[0].__nodeValue
-            except Exception, e:
-                    print e
+	    try: # get description
+		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:description', context=c) 
+    		if len(results) == 1:
+        		metadata['description'] = results[0].childNodes[0].__nodeValue
+	    except Exception, e:
+		print e
 
-            try: # get keywords
-                    results = xpath.Evaluate('//svg:metadata/rdf:RDF//cc:Work/dc:subject/rdf:Bag/rdf:li', context=c)
-                    if len(results) > 0:
-                            metadata['keywords'] = tuple([el.childNodes[0].__nodeValue for el in results if len(el.childNodes) > 0])
-            except Exception, e:
-                    print e
-                    raise
+	    try: # get keywords
+		results = xpath.Evaluate('//svg:metadata/rdf:RDF//cc:Work/dc:subject/rdf:Bag/rdf:li', context=c)
+	    	if len(results) > 0:
+	    		metadata['keywords'] = tuple([el.childNodes[0].__nodeValue for el in results if len(el.childNodes) > 0])
+	    except Exception, e:
+		print e
+	    	raise
 
-            return metadata
+	    return metadata
 else:   # Otherwise, we don't get a backup metadata parser... if the repository doesn't provide metadata, we're out of luck for those images
     def getMetadata(xml):
-        return {}
+	    return {}
 
 class Interface(object):
 	"Represents the Clip Art Navigator gui (and only the gui)"
@@ -225,7 +225,7 @@ class Interface(object):
 	smallsize = 80 	# Dimensions of browse icons
 	largesize = 240	# Dimensions of preview images 
 
-	def __init__(self, config, searcher, renderer, outFile=None, inkscape=False, filename=None):
+	def __init__(self, config, searcher, renderer, outFile=None, filename=None):
 		"Modules is a list of repository module api objects used for querying"
 
 		self.config = config
@@ -237,7 +237,6 @@ class Interface(object):
 		assert callable(renderer)
 		self.makePixbuf = renderer
 
-		self.inkscape = inkscape
 		self.filename = filename
 
 		self.xml = gtk.glade.XML('clipartnav.glade')
@@ -406,7 +405,6 @@ class Interface(object):
 			try:
 				self.store.append(self.makeStoreItem(xml, metadata))
 			except Exception, e:
-				print "EXCEPTION:", e
 				pass # If an image couldn't be rendered, skip it
 		self.__firstSearch = False
 		self.statusbar.push(self.statuscontext, '%i images' % len(self.store))
@@ -419,7 +417,7 @@ class Interface(object):
 
 	def on_iconview_item_activated(self, widget, path):
 		imgXML = self.store[path[0]][0]
-		if not self.inkscape:
+		if not self.filename:
 			output =  imgXML
 		else: # If we're supposed to insert the clipart into an image provided on stdin
 			inputDoc = minidom.parseString(file(self.filename).read()).documentElement
@@ -473,31 +471,33 @@ class MaxResults(Exception):
 	pass
 
 if __name__ == '__main__':
-	origDir = os.getcwd() # We switch to another dir to load modules, glade, etc., then switch back
+#	We switch to the directory this script is in (using an admittedly odd technique) so that we can access 
+#	needed files in that directory easily
+	origDir = os.getcwd() 
+	import modules
+	os.chdir(os.path.split(modules.__path__[0])[0])
 	opts, args = getopt.getopt(sys.argv[1:], 'f:', ('id='))
 	outFile = None # None means standard output, Inkscape style
-
-#	inkscape = False
-	inkscape = True # FIXME: a distinct inkscape mode needs to be detected via options, but can't get that to work right now... the options in the inx file get passed to the python cmd, not the script
 
 	for opt, value in opts:
 		if opt == '-f':
 			outFile = value
-		if opt == '--inkscape':
-			inkscape = True
 	
+#	If a filename is provided as an arg, insert clipart into it 
+	if len(args) > 0:
+		inputFilename = args[0]
+	else: # Otherwise, just output the clipart itself
+		inputFilename = None
+
 	config = ConfigParser.SafeConfigParser()
 	configPaths = [os.path.expanduser('~/.inkscape/clipartnav.conf'), 'clipartnav.conf']
 	if not config.read(configPaths):
 		sys.exit('Unable to find configuration file; looking at %s' % configPaths)
-	if not config.has_option('main', 'extensionsdir'):
-		sys.exit('Invalid configuration file; missing "extensionsdir" variable in the "main" section')
-	os.chdir(config.get('main', 'extensionsdir'))
 	try:
 		searcher = Searcher(config)
 	except NoRepositoriesError:
 		sys.exit('Error: no repositories were able to be loaded.  Check your config file and repository module dir')
 	renderer = Renderer(config)
-	interface = Interface(config, searcher, renderer, outFile=outFile, inkscape=inkscape, filename=args[0])
+	interface = Interface(config, searcher, renderer, outFile=outFile, filename=inputFilename)
 	os.chdir(origDir) # We switch back to orig dir so that writing output to a file works as expected
 	gtk.main()
