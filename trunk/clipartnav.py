@@ -7,10 +7,20 @@ import tempfile
 import ConfigParser
 import subprocess
 import os
-import cStringIO
 import sys
 import getopt
+from cStringIO import StringIO
+import md5
 from xml.dom import minidom
+try: # If PyXML is available, it can provide a backup parser for metadata, if repositories don't provide metadata
+	from xml.dom.ext.reader import PyExpat
+	from xml.dom.ext import Print
+	from xml import xpath
+	from xml.xpath import Context
+	parseMetadata = True
+except: # Otherwise, we don't have a backup metadata parser
+	parseMetadata = False
+	
 
 class Searcher:
 	"Abstracts away the process of searching different repositories and aggregating their results"
@@ -41,16 +51,11 @@ class Searcher:
 		self.repos = [] # A list of (module, iscache) duples... 
 		self.errorModules = []
 		for name, cache in modules:
-#			Get configuration info for each module
-			modConfig = {}
-			if config.has_section(name):
-				for key, value in config.items(name):
-					modConfig[key] = value
 			try:
 				package = __import__('modules.%s'  % name)
 				mod = getattr(package, name)
 #				Load a repo api instance, giving it its config info as a dict
-				self.repos.append((mod.API(modConfig), cache))
+				self.repos.append((mod.API(config), cache))
 				if getattr(self.repos[-1][0], 'initMessages', None):
 					for msg in self.repos[-1][0].initMessages:
 						d = gtk.MessageDialog(flags=gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_OK, format=msg)
@@ -59,6 +64,7 @@ class Searcher:
 
 			except:
 				self.errorModules.append(name)
+				raise
 
 		if len(self.repos) is 0:
 			raise NoRepositoriesError
@@ -76,17 +82,20 @@ class Searcher:
 				if callable(statusCallback):
 					name = getattr(repo, 'title', '')
 					statusCallback('Searching %s...' % name)
-					results = repo.query(q) # A list of id, hash duples
-					for ID, hash in results:
-						if hash not in allHashes or hash is None:
-							allHashes.append(hash)
-							xml, metadata = repo.getImage(ID)
-							if metadata is None:
-#								FIXME: Parse the metdata dynamically here
-								metadata = {}
-							allImages.append((xml, metadata)) # an xml, metadata duple
-							if self.maxResults and len(allHashes) == self.maxResults:
-								raise MaxResults
+				results = repo.query(q) # A list of id, hash duples
+				for ID, hash in results:
+					if hash not in allHashes or hash is None:
+						allHashes.append(hash)
+						xml, metadata = repo.getImage(ID)
+						if hash is None:
+							hash = md5.new(xml).hexdigest()
+							if hash in allHashes:
+								continue
+						if metadata is None:
+							metadata = getMetadata(xml)
+						allImages.append((xml, metadata)) # an xml, metadata duple
+						if self.maxResults and len(allHashes) == self.maxResults:
+							raise MaxResults
 		except MaxResults:
 			pass
 		return allImages # a list of xml, metadata duples
@@ -140,7 +149,7 @@ class Renderer:
 	def __gdkRender(self, size):
 		"Render using librsvg"
 #		The sys stuff is in here to keep gdk's potential error messages from being read by Inkscape
-		sys.stdout = cStringIO.StringIO()
+		sys.stdout = StringIO()
 		try:
 			pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(self.svgTempName, size, size)
 			sys.stdout = sys.__stdout__
@@ -159,6 +168,56 @@ class Renderer:
 			raise Exception
 
 		return gtk.gdk.pixbuf_new_from_file(self.pngTempName)
+
+if parseMetadata: # If PyXML is available, this func is can be a backup for repositories that don't provide metadata
+    def getMetadata(xml):
+            "Given an xml document, get the rdf dc title value"
+            reader = PyExpat.Reader()
+            doc = reader.fromString(xml)
+            de = doc.documentElement
+            nss = {'svg':'http://www.w3.org/2000/svg',
+                    'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+                    'cc': 'http://web.resource.org/cc/',
+                    'dc': 'http://purl.org/dc/elements/1.1/'
+            }
+
+            c = Context.Context(de, processorNss=nss)
+            
+            metadata = {}
+
+            try: # get title
+                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:title', context=c)
+                    if len(results) == 1:
+                            metadata['title'] = results[0].childNodes[0].__nodeValue
+            except Exception, e:
+                    print e
+
+            try: # get artist
+                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:creator/cc:Agent/dc:title', context=c)
+                    if len(results) == 1:
+                            metadata['artist'] = results[0].childNodes[0].__nodeValue
+            except Exception, e:
+                    print e
+
+            try: # get description
+                    results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:description', context=c) 
+                    if len(results) == 1:
+                            metadata['description'] = results[0].childNodes[0].__nodeValue
+            except Exception, e:
+                    print e
+
+            try: # get keywords
+                    results = xpath.Evaluate('//svg:metadata/rdf:RDF//cc:Work/dc:subject/rdf:Bag/rdf:li', context=c)
+                    if len(results) > 0:
+                            metadata['keywords'] = tuple([el.childNodes[0].__nodeValue for el in results if len(el.childNodes) > 0])
+            except Exception, e:
+                    print e
+                    raise
+
+            return metadata
+else:   # Otherwise, we don't get a backup metadata parser... if the repository doesn't provide metadata, we're out of luck for those images
+    def getMetadata(xml):
+        return {}
 
 class Interface(object):
 	"Represents the Clip Art Navigator gui (and only the gui)"
@@ -262,6 +321,7 @@ class Interface(object):
 			contents = self.store[selected[0][0]][0]
 		selection_data.set(selection_data.target, 8, contents)
 
+#	FIXME: This needs to behave more intelligently when certain metadata values don't exist
 	def makeStoreItem(self, xml, metadata):
 		"Given svg xml and metadata, return a 7-tuple suitable for use in a ListStore"
 
@@ -365,11 +425,6 @@ class Interface(object):
 			inputDoc = minidom.parseString(file(self.filename).read()).documentElement
 #			If the clipart svg cannot be parsed, this won't work...
 			newPic = minidom.parseString(imgXML).documentElement
-			try:
-				newPic.removeAttribute('height')
-			except:
-				pass
-			newPic.setAttribute('width', '50%')
 			inputDoc.appendChild(newPic)
 			output = inputDoc.toxml()
 			

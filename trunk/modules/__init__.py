@@ -1,3 +1,3 @@
 #!/usr/bin/python
 
-# This is a package.  Really.
+# This is a python package.  Really.
