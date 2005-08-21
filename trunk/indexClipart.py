@@ -1,5 +1,6 @@
 #!/usr/bin/python
-"""Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
+"""indexClipart.py- A python script that creates an index for a clip art collection
+Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

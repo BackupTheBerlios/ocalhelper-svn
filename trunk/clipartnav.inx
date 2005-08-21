@@ -1,5 +1,5 @@
 <inkscape-extension>
-    <name>Clip Art Explorer</name>
+    <name>Clip Art Browser</name>
     <id>org.ocal</id>
 	<dependency type="executable" location="extensions">clipartnav.py</dependency>
     <effect>

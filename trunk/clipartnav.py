@@ -1,5 +1,7 @@
 #!/usr/bin/python
-"""Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
+"""
+clipartnav.py - An extension to Inkscape for searching for clip art
+Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

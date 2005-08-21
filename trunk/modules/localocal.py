@@ -1,5 +1,6 @@
 #!/usr/bin/python
-"""Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
+"""localocal.py- A module for local clip art repositories for the Clip Art Navigator
+Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
