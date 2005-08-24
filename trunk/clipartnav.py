@@ -293,12 +293,13 @@ class Interface(object):
 		self.changeSelected(None)
 
 #		gtk-style targets for ipc, i.e. dnd and clipboard-copy
-		self.ipcTargets = [('image/svg+xml', 0, 0)]
+#		self.ipcTargets = [('image/svg+xml', 0, 0)]
+		self.ipcTargets = [('image/svg', 0, 0)]
 
 		self.iconview.drag_source_set(gtk.gdk.BUTTON1_MASK, self.ipcTargets, gtk.gdk.ACTION_COPY)
 		self.iconview.connect('drag_data_get', self.drag_data_get)
 
-		self.clipboard = gtk.Clipboard()
+		self.clipboard = gtk.Clipboard(selection='CLIPBOARD')
 	
 	def __del__(self):
 		"Cleanup the inkview temp file"
@@ -322,12 +323,16 @@ class Interface(object):
 			contents = ''
 		else:
 			contents = self.store[selected[0][0]][0]
-		self.clipboard.set_with_data(self.ipcTargets, self.clipboard_get, lambda a, b: None, '')
-		self.clipboard.set_text(contents)
+		self.clipboard.clear()
+		self.clipboard.set_with_data(self.ipcTargets, self.clipboard_get, self.clipboard_clear, contents)
 
 #	This function never worked correctly, and probably serves no purpose anymore...
 	def clipboard_get(self, clipboard, selection_data, info, contents):
-		selection_data.set(selection_data.target, 8, contents)
+		print 'pasting!'
+		selection_data.set(gtk.gdk.SELECTION_CLIPBOARD, 8, contents)
+
+	def clipboard_clear(self, clipboard, data):
+		pass
 
 	def drag_data_get(self, widget, context, selection_data, info, timestamp):
 		"Provide data to be copied in a drag-drop"

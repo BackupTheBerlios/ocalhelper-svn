@@ -26,7 +26,7 @@ class API:
 	def __init__(self, config):
 		self.repodir = config.get('localocal', 'repodir')
 		indexFile = os.path.join(self.repodir, 'index.dat')
-		index = shelve.open(indexFile)
+		index = shelve.open(indexFile, writeback=False)
 		self.kwIndex = index['keywords']
 		self.pathIndex = index['paths']
 
