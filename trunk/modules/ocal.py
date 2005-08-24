@@ -29,7 +29,7 @@ class API:
 		if config.has_option('ocal', 'searchurl'):
 			self.url = config.get('ocal', 'searchurl')
 		else:
-			self.url = 'http//openclipart.org/cgi-bin/keyword_search.cgi'
+			self.url = 'http://openclipart.org/cgi-bin/keyword_search.cgi'
 
 		if config.has_option('ocal', 'maxresults'):
 			self.maxresults = config.get('ocal', 'maxresults')
@@ -38,8 +38,8 @@ class API:
 
 	def query(self, q):
 		"Given a query, return a list of (path, None) duples"
-		data = urllib.urlencode({'keywords':q, 'howmany':self.maxresults})
-		resultsPage = urllib.urlopen(self.url, data)
+		d = urllib.urlencode({'keywords':q, 'howmany':self.maxresults})
+		resultsPage = urllib.urlopen(self.url, d)
 		p = _Parser()
 		p.resultHrefs = []
 		p.feed(resultsPage.read())

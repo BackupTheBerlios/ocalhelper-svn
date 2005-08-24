@@ -328,7 +328,6 @@ class Interface(object):
 
 #	This function never worked correctly, and probably serves no purpose anymore...
 	def clipboard_get(self, clipboard, selection_data, info, contents):
-		print 'pasting!'
 		selection_data.set(gtk.gdk.SELECTION_CLIPBOARD, 8, contents)
 
 	def clipboard_clear(self, clipboard, data):
