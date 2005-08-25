@@ -53,7 +53,7 @@ def makeIndex(rootdir, indexFile='index.dat', verbose=False):
 					kwIndex[word] = set([c])
 			if verbose:
 				print 'indexed', fullpath
-	persist = shelve.open(os.path.join(rootdir, indexFile))
+	persist = shelve.open(indexFile)
 	persist['keywords'] = kwIndex
 	persist['paths'] = pathIndex
 	if verbose:
@@ -108,10 +108,24 @@ def getMetadata(svg):
 	metadata['keywords'] = getattr(m, 'keywords', [])
 	return metadata
 
+helpmsg = '''indexClipart.py
+USAGE: python indexClipart.py [OPTIONS] [DIR]
+
+DIR is the root directory of the clip art dump.  Defaults to "."
+
+Options:
+	-v		Verbose output
+	-f=filename	path to index file to be generated
+
+DESCRIPTION
+
+Create an index for a clip art repository in the format that the localocal module for the Clip Art Browser needs.
+'''
+
 if __name__ == '__main__':
 	import sys
 	import getopt
-	opts, args = getopt.getopt(sys.argv[1:], 'vf:')
+	opts, args = getopt.getopt(sys.argv[1:], 'hvf:')
 	verbose = False
 	indexFile = 'index.dat'
 	for opt, value in opts:
@@ -119,11 +133,12 @@ if __name__ == '__main__':
 			verbose = True
 		if opt == '-f':
 			indexFile = value
+		if opt == '-h':
+			print helpmsg
+			sys.exit()
 
 	if len(args) > 0:
 		rootdir = args[0]
 	else:
 		rootdir = '.'
 	makeIndex(rootdir, indexFile, verbose)
-
-	
