@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-clipartnav.py - An extension to Inkscape for searching for clip art
+clipartbrowser.py - An extension to Inkscape for searching for clip art
 Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify
@@ -250,7 +250,7 @@ class Interface(object):
 
 		self.filename = filename
 
-		self.xml = gtk.glade.XML('clipartnav.glade')
+		self.xml = gtk.glade.XML('clipartbrowser.glade')
 		self.xml.signal_autoconnect(self)
 
 #		Columns are xml, icon pixbuf, preview pixbuf, marked-up title, raw title, artist, keywords
@@ -505,7 +505,7 @@ if __name__ == '__main__':
 		inputFilename = None
 
 	config = ConfigParser.SafeConfigParser()
-	configPaths = [os.path.expanduser('~/.inkscape/clipartnav.conf'), 'clipartnav.conf']
+	configPaths = [os.path.expanduser('~/.inkscape/clipartbrowser.conf'), 'clipartbrowser.conf']
 	if not config.read(configPaths):
 		sys.exit('Unable to find configuration file; looking at %s' % configPaths)
 	try:
