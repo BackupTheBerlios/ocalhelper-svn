@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""ocal.py- A module to access the Open Clip Art Library remotely from the Clip Art Navigator
+"""ocal.py- A module to access the Open Clip Art Library remotely from the Clip Art Browser
 Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify

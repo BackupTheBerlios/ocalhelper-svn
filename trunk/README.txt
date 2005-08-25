@@ -42,13 +42,13 @@ INSTALL NOTES
 
 General
 
-The Clip Art Navigator REQUIRES Python 2.4, GTK 2.6, and PyGTK >= 2.6.
-In addition, Inkscape 0.42 and  a recent PyXML (from
-http://pyxml.sourceforge.net) are strongly reccommended.
+The Clip Art Navigator REQUIRES Python 2.4, GTK 2.6, and PyGTK >= 2.6.  In
+addition, Inkscape 0.42 (from http://pyxml.sourceforge.net) is reccomended on
+Linux systems and is required on Windows systems.
 
 To install as a standalone program, simply unpack.  This distribution
 comes with two repository modules: localocal (for local system
-clipart) and ocal (remote access to the Open Clip Art Library).  You
+clipart) and ocal_net (remote access to the Open Clip Art Library).  You
 can choose to use one or both of these modules via the "modules"
 option under the "main" section in the configuration file
 (clipartnav.conf).  Modules are simply listed by their python name

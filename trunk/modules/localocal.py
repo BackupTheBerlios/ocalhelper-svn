@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""localocal.py- A module for local clip art repositories for the Clip Art Navigator
+"""localocal.py- A module for local clip art repositories for the Clip Art Browser
 Copyright (C) 2005 Greg Steffensen, greg.steffensen@gmail.com
 
 This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,7 @@ class API:
 	title = 'localocal'
 	def __init__(self, config):
 		self.repodir = config.get('localocal', 'repodir')
-		indexFile = os.path.join(self.repodir, 'index.dat')
+		indexFile = config.get('localocal', 'indexfile')
 		index = shelve.open(indexFile, writeback=False)
 		self.kwIndex = index['keywords']
 		self.pathIndex = index['paths']
