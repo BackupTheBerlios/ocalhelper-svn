@@ -30,15 +30,8 @@ import getopt
 from cStringIO import StringIO
 import md5
 from xml.dom import minidom
-try: # If PyXML is available, it can provide a backup parser for metadata, if repositories don't provide metadata
-	from xml.dom.ext.reader import PyExpat
-	from xml.dom.ext import Print
-	from xml import xpath
-	from xml.xpath import Context
-	parseMetadata = True
-except: # Otherwise, we don't have a backup metadata parser
-	parseMetadata = False
-	
+from xml.parsers import expat
+
 
 class Searcher:
 	"Abstracts away the process of searching different repositories and aggregating their results"
@@ -62,7 +55,6 @@ class Searcher:
 			else:
 				self.maxResults = None
 		except Exception, e:
-			raise
 			raise BadConfigError
 
 
@@ -187,55 +179,56 @@ class Renderer:
 
 		return gtk.gdk.pixbuf_new_from_file(self.pngTempName)
 
-if parseMetadata: # If PyXML is available, this func is can be a backup for repositories that don't provide metadata
-    def getMetadata(xml):
-	    "Given an xml document, get the rdf dc title value"
-	    reader = PyExpat.Reader()
-	    doc = reader.fromString(xml)
-	    de = doc.documentElement
-	    nss = {'svg':'http://www.w3.org/2000/svg',
-		'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-		'cc': 'http://web.resource.org/cc/',
-		'dc': 'http://purl.org/dc/elements/1.1/'
-	    }
 
-	    c = Context.Context(de, processorNss=nss)
+class _MetadataParser:
 
-	    metadata = {}
+	svgNS = 'http://www.w3.org/2000/svg'
+	dcNS = 'http://purl.org/dc/elements/1.1/'
+	ccNS = 'http://web.resource.org/cc/'
+	rdfNS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
 
-	    try: # get title
-		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:title', context=c)
-		if len(results) == 1:
-		    metadata['title'] = results[0].childNodes[0].__nodeValue
-            except Exception, e:
-		print e
+	def __init__(self):
+		self.path = []
+		self.result = None
+		self.keywords = [] # This will be implemented later
+        
+	def metadata_startElement(self, name, attrs):
+		self.path.append(name)
 
-	    try: # get artist
-		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:creator/cc:Agent/dc:title', context=c)
-		if len(results) == 1:
-                	metadata['artist'] = results[0].childNodes[0].__nodeValue
-	    except Exception, e:
-	    	print e
+	def metadata_endElement(self, name):
+		self.path.pop()
 
-	    try: # get description
-		results = xpath.Evaluate('//svg:metadata/rdf:RDF/cc:Work/dc:description', context=c) 
-    		if len(results) == 1:
-        		metadata['description'] = results[0].childNodes[0].__nodeValue
-	    except Exception, e:
-		print e
+	def metadata_charData(self, data):
 
-	    try: # get keywords
-		results = xpath.Evaluate('//svg:metadata/rdf:RDF//cc:Work/dc:subject/rdf:Bag/rdf:li', context=c)
-	    	if len(results) > 0:
-	    		metadata['keywords'] = tuple([el.childNodes[0].__nodeValue for el in results if len(el.childNodes) > 0])
-	    except Exception, e:
-		print e
-	    	raise
+		# Get title
+ 		if self.path[-1] == self.dcNS + ':title' and self.path[-2] == self.ccNS + ':Work':
+			self.title = data
 
-	    return metadata
-else:   # Otherwise, we don't get a backup metadata parser... if the repository doesn't provide metadata, we're out of luck for those images
-    def getMetadata(xml):
-	    return {}
+		# Get artist
+		if self.path[-1] == self.dcNS + ':title' and self.path[-3] == self.dcNS + ':creator':
+			self.artist  = data
+
+		# Get keywords
+		if self.path[-1] == self.rdfNS + ':li' and self.path[-3] == self.dcNS + ':subject':
+			if getattr(self, 'keywords', None) is None:
+				self.keywords = [data]
+			else:
+				self.keywords.append(data)
+        
+def getMetadata(svg):
+	"Given the xml contents of an svg image, return a dict of its main metadata"
+	metadata = {}
+	parser = expat.ParserCreate(namespace_separator=':')
+	m = _MetadataParser()
+	parser.StartElementHandler = m.metadata_startElement
+	parser.EndElementHandler = m.metadata_endElement
+	parser.CharacterDataHandler = m.metadata_charData
+	parser.Parse(svg)
+	metadata['title'] = getattr(m, 'title', None)
+	metadata['artist'] = getattr(m, 'artist', None)
+	metadata['keywords'] = getattr(m, 'keywords', [])
+	return metadata
+
 
 class Interface(object):
 	"Represents the Clip Art Navigator gui (and only the gui)"
