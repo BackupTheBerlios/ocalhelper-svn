@@ -74,7 +74,6 @@ class Searcher:
 
 			except:
 				self.errorModules.append(name)
-				raise
 
 		if len(self.repos) is 0:
 			raise NoRepositoriesError

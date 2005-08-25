@@ -25,8 +25,11 @@ import itertools
 import os
 import md5
 import shelve
+import ConfigParser
 
-def makeIndex(rootdir, indexFile='index.dat', verbose=False):
+verbose = False
+
+def makeIndex(rootdir, indexFile='index.dat'):
 	rootdir = os.path.normpath(rootdir) # Remove the trailing slash, if any
 	kwIndex = {}
 	pathIndex = {}
@@ -108,6 +111,24 @@ def getMetadata(svg):
 	metadata['keywords'] = getattr(m, 'keywords', [])
 	return metadata
 
+def updateConfig(filename, repodir, indexfile):
+	"Update a clipartbrowser config file using the info being used currently for indexing"
+	if verbose:
+	    print 'Updating config file at %s ...' % filename
+	section = 'localocal'
+	c = ConfigParser.ConfigParser()
+	if not c.read(filename):
+	    sys.exit('Error: unable to parse configuration file at %s' % filename)
+	if not c.has_section(section):
+	    c.add_section(section)
+	c.set(section, 'repodir', repodir)
+	c.set(section, 'indexfile', indexfile)
+	c.write(file(filename, 'w'))
+	if verbose:
+	    print 'Config file updated successfully'
+
+
+
 helpmsg = '''indexClipart.py
 USAGE: python indexClipart.py [OPTIONS] [DIR]
 
@@ -116,6 +137,8 @@ DIR is the root directory of the clip art dump.  Defaults to "."
 Options:
 	-v		Verbose output
 	-f=filename	path to index file to be generated
+	-h		Print this help message
+	-c=configfile	Update browser config file using current indexing settings
 
 DESCRIPTION
 
@@ -125,20 +148,37 @@ Create an index for a clip art repository in the format that the localocal modul
 if __name__ == '__main__':
 	import sys
 	import getopt
-	opts, args = getopt.getopt(sys.argv[1:], 'hvf:')
-	verbose = False
+	opts, args = getopt.getopt(sys.argv[1:], 'chvf:')
 	indexFile = 'index.dat'
+	configFile = None
 	for opt, value in opts:
 		if opt == '-v':
 			verbose = True
-		if opt == '-f':
+		elif opt == '-f':
 			indexFile = value
-		if opt == '-h':
+		elif opt == '-h':
 			print helpmsg
 			sys.exit()
+		elif opt == '-c':
+		    if value:
+		    	configFile = value
+		    else:
+			configFile = os.path.expanduser('~/.inkscape/clipartbrowser.conf')
+		    
 
 	if len(args) > 0:
 		rootdir = args[0]
 	else:
 		rootdir = '.'
-	makeIndex(rootdir, indexFile, verbose)
+
+#	Make paths absolute
+	indexFile = os.path.abspath(indexFile) 
+	rootdir = os.path.abspath(rootdir)
+	if not os.path.isdir(rootdir):
+	    sys.exit('Error: repository path %s is not a directory' % rootdir)
+	if configFile and not os.path.isfile(configFile):
+	    sys.exit('Error: configuration file %s does not exist' % configFile)
+
+	makeIndex(rootdir, indexFile)
+	if configFile:
+	    updateConfig(configFile, rootdir, indexFile)
