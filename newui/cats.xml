@@ -1,0 +1,14 @@
+<category-hierarchy collection="Local clipart">
+    <category name="Food">
+        <category name="Beverages"/>
+        <category name="Desserts"/>
+    </category>
+    <category name="Animals">
+        <category name="Birds"/>
+        <category name="Mammals">
+            <category name="Primates"/>
+        </category>
+        <category name="Fish"/>
+        <category name="Bugs"/>
+    </category>
+</category-hierarchy>
