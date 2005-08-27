@@ -18,6 +18,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 """
 
+from string import Template
 import gtk
 import pygtk
 import gtk.glade
@@ -102,7 +103,7 @@ class RepoTree(gtk.TreeStore):
                         xml, metadata = repo.getImage(ID)
                         if metadata is None:
                             metadata = getMetadata(xml)
-                        metadata['MD5 hash'] = hash
+                        metadata['md5 hash'] = hash
                         allImages.append((xml, metadata)) # an xml, metadata duple
                         if maxResults and len(allHashes) == maxResults:
                             raise MaxResults
@@ -165,15 +166,15 @@ class Renderer:
 
     def __init__(self, config):
         
-        if config.has_option('main', 'inkscapecmd'):
-            self.inkscapeCmd = config.get('main', 'inkscapecmd').strip()
+        if config.has_option('main', 'externalrenderercmd'):
+            self.extCmd = Template(config.get('main', 'externalrenderercmd'))
         else:
-            self.inkscapeCmd = 'inkscape' # reasonable default
+            self.extCmd = None
 
-        if config.has_option('main', 'renderinkscape'): # allowed values: always, backup, never
-            self.renderInkscape = config.get('main', 'renderinkscape').strip().lower()
+        if config.has_option('main', 'rendermode'): # allowed values: always, backup, never
+            self.renderMode = config.get('main', 'rendermode').strip().lower()
         else:
-            self.renderInkscape = 'backup' # reasonable default
+            self.renderMode = 'backup' # reasonable default
 
         self.svgTempName = tempfile.mkstemp(suffix='.svg')[1]
         self.pngTempName = tempfile.mkstemp(suffix='.png')[1]
@@ -193,17 +194,18 @@ class Renderer:
         f.close()
 
         try:
-            if self.renderInkscape == 'backup':
+            if self.renderMode == 'both': # try gdk, and if that doesn't work, use external renderer
                 try:
                     pixbuf = self.__gdkRender(size)
                     return self.__gdkRender(size)
                 except:
-                    return self.__inkscapeRender(size)
-            elif self.renderInkscape == 'always':
-                return self.__inkscapeRender(size)
-            else: # renderInkscape == 'never'
+                    return self.__externalRender(size)
+            elif self.renderMode.startswith('ext'): # i.e. "external", "ext"
+                return self.__externalRender(size)
+            else: # renderMode == 'gdk'
                 return self.__gdkRender(size)
         except Exception, e:
+            raise
             raise UnrenderableError
 
     def __gdkRender(self, size):
@@ -212,9 +214,9 @@ class Renderer:
         return pixbuf
 
     
-    def __inkscapeRender(self, size):
-        "Use inkscape to convert image to png, then render"
-        cmd = '%s %s --export-png=%s -w%i -h%i' % (self.inkscapeCmd, self.svgTempName, self.pngTempName, size, size)
+    def __externalRender(self, size):
+        "Use an external program to convert image to png, then render"
+        cmd = self.extCmd.substitute(svgfile=self.svgTempName, pngfile=self.pngTempName, width=size, height=size)
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         retcode = p.wait()
         if retcode is not 0:
@@ -316,6 +318,23 @@ class Interface(object):
         self.statusbar = self.xml.get_widget('statusbar')
         self.statuscontext = self.statusbar.get_context_id('searching')
 
+#       Setup launchers for any external viewers listed in the config file
+        self.imagemenu = self.xml.get_widget('imagemenu_menu')
+        if config.has_section('externalviewers'):
+            externalViewers = config.options('externalviewers')
+            for viewer in reversed(externalViewers): # add viewer progs to the image menu
+                menuitem = gtk.MenuItem('Open in %s' % viewer.strip().title())
+                self.imagemenu.prepend(menuitem)
+                menuitem.show()
+                cmd = config.get('externalviewers', viewer)
+                menuitem.connect('activate', self.on_externalviewer_activated, cmd)
+            self.toolbar = self.xml.get_widget('toolbar')
+            previewButton = gtk.ToolButton('gtk-edit')
+            previewButton.set_label('Open in %s' % externalViewers[0].strip().title())
+            previewButton.connect('clicked', self.on_externalviewer_activated, config.get('externalviewers', externalViewers[0]))
+            self.toolbar.insert(previewButton, 2)
+            previewButton.show()
+
         if self.config.has_option('main', 'inkviewcmd') and self.config.get('main', 'inkviewcmd'):
             self.inkviewcmd = self.config.get('main', 'inkviewcmd')
             self.inkviewtmp = tempfile.mkstemp(suffix='.svg')[1]
@@ -380,6 +399,7 @@ class Interface(object):
                 valueLabel.show()
                 self.infotable.attach(valueLabel, 1, 2, i, i + 1)
                 self.infowindow.show()
+
     def on_infowindow_delete_event(self, widget, event):
         print 'deleting info window'
         self.infowindow.hide()
@@ -477,18 +497,18 @@ class Interface(object):
                 widget.select_path(path)
                 self.popupmenu.popup(None, None, None, event.button, event.time)
     
-    def on_preview_activate(self, widget):
+    def on_externalviewer_activated(self, widget, cmd=None):
         "Preview the currently selected image with inkview"
 
-#       FIXME: Code should be added here to try to preview with gdk as a fallback
-        if not self.inkviewcmd:
+        if not cmd:
+            print 'no command given'
             return
 
         paths = self.iconview.get_selected_items()
         if len(paths) > 0:
             xml = self.store[paths[0][0]][0]
             file(self.inkviewtmp, 'w').write(xml)
-        subprocess.call('%s %s' % (self.inkviewcmd, self.inkviewtmp), shell=True)
+        subprocess.call('%s %s' % (cmd, self.inkviewtmp), shell=True)
 
     def searchUpdate(self, msg):
         "Update the statusbar with the name of the repository currently being searched"
