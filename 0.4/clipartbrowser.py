@@ -33,82 +33,6 @@ from xml.dom import minidom
 from xml.parsers import expat
 
 
-class Searcher:
-    "Abstracts away the process of searching different repositories and aggregating their results"
-
-#    Takes an already loaded ConfigParser instance
-    def __init__(self, config):
-        try:
-            moduleNames = [word.strip() for word in config.get('main', 'modules').split(';') if word.strip()]
-            rawNames = [word.strip() for word in config.get('main', 'modules').split(';') if word.strip()]
-            modules = []
-            for name in rawNames:
-#                Detect whether this repo serves as a cache for subsequent repos
-                if name.endswith(' iscache'):
-                    modules.append((name[:-8], True))
-                else:
-                    modules.append((name, False))
-
-            if config.has_option('main', 'maxresults'):
-                self.maxResults = int(config.get('main', 'maxresults').strip())
-                assert self.maxResults >= 0
-            else:
-                self.maxResults = None
-        except Exception, e:
-            raise BadConfigError
-
-
-        self.repos = [] # A list of (module, iscache) duples... 
-        self.errorModules = []
-        for name, cache in modules:
-            try:
-                package = __import__('modules.%s'  % name)
-                mod = getattr(package, name)
-#                Load a repo api instance, giving it its config info as a dict
-                self.repos.append((mod.API(config), cache))
-                if getattr(self.repos[-1][0], 'initMessages', None):
-                    for msg in self.repos[-1][0].initMessages:
-                        d = gtk.MessageDialog(flags=gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, type=gtk.MESSAGE_WARNING, buttons=gtk.BUTTONS_OK, format=msg)
-                        d.show()
-                        d.run()
-
-            except:
-                self.errorModules.append(name)
-
-        if len(self.repos) is 0:
-            raise NoRepositoriesError
-    
-    def __call__(self, q, statusCallback=None):
-        "Given a query, search all repositories and return the net list of (xml, metadata) duples"
-#        We uniquely identify images by the md5 hash of their xml contents, which
-#        repositories are required to return (we could calculate it ourselves, but
-#        that's a waste of time).  Duplicate images are filtered out of search results this way.
-        allHashes = [] 
-        allImages = []
-        try:
-            for repo, cache in self.repos:
-#                Let the gui know what repo we're currently searching via a callback
-                if callable(statusCallback):
-                    name = getattr(repo, 'title', '')
-                    statusCallback('Searching %s...' % name)
-                results = repo.query(q) # A list of id, hash duples
-                for ID, hash in results:
-                    if hash not in allHashes or hash is None:
-                        allHashes.append(hash)
-                        xml, metadata = repo.getImage(ID)
-                        if hash is None:
-                            hash = md5.new(xml).hexdigest()
-                            if hash in allHashes:
-                                continue
-                        if metadata is None:
-                            metadata = getMetadata(xml)
-                        allImages.append((xml, metadata)) # an xml, metadata duple
-                        if self.maxResults and len(allHashes) == self.maxResults:
-                            raise MaxResults
-        except MaxResults:
-            pass
-        return allImages # a list of xml, metadata duples
-
 class RepoTree(gtk.TreeStore):
     "A gtk tree model for storing the category hierarchies of loaded repositories"
 
@@ -153,10 +77,14 @@ class RepoTree(gtk.TreeStore):
 
     @staticmethod
     def query(q, repos, maxResults=None, statusCallback=None):
+        q = q.strip()
 
-#        We uniquely identify images by the md5 hash of their xml contents, which
-#        repositories are required to return (we could calculate it ourselves, but
-#        that's a waste of time).  Duplicate images are filtered out of search results this way.
+        if not q: # If repos are implemented correctly, this would happen anyway, but this is faster
+            return []
+
+#       We uniquely identify images by the md5 hash of their xml contents, which
+#       repositories are required to return (we could calculate it ourselves, but
+#       that's a waste of time).  Duplicate images are filtered out of search results this way.
         allHashes = [] 
         allImages = []
         try:
@@ -189,7 +117,7 @@ class RepoTree(gtk.TreeStore):
                 ID = attrs['id']
             else:
                 ID = attrs['name']
-            newRow = ['category:"%s"' % ID, attrs['name'], self.__currentRepo, None]
+            newRow = ['category:"%s"' % ID, attrs['name'].capitalize(), (self.__currentRepo,), None]
             iter = self.append(self.path[-1], newRow) #self.path[-1] is the parent category of this category
             self.path.append(iter) # record that we've descended one step into the hierarchy
     def __endElementHandler(self, name):
@@ -215,8 +143,24 @@ class RepoTree(gtk.TreeStore):
             self.parser.Parse(xml)
             del self.__currentRepo
 
+    def addSearch(self, query):
+        "Add a search to the search queries"
+        newRow = [query, query[:50], self.repositories, None]
+        return self.get_path(self.append(self.searchResultsRow, newRow))
 
+    def clearSearches(self):
+        "Clear the search list"
+        child = self.iter_children(self.searchResultsRow)
+        while child:
+            oldchild = child
+            child = self.iter_next(child)
+            self.remove(oldchild)
 
+    def getSearchRowPath(self):
+        return self.get_path(self.searchResultsRow)
+
+# A callable class for rendering svg data into pixbufs
+# FIXME: this would be a WONDERFUL place to add caching
 class Renderer:
     "Given svg data and a size, returns a gdk pixbuf rendering of it"
 
@@ -265,15 +209,8 @@ class Renderer:
 
     def __gdkRender(self, size):
         "Render using librsvg"
-#        The sys stuff is in here to keep gdk's potential error messages from being read by Inkscape
-        sys.stdout = StringIO()
-        try:
-            pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(self.svgTempName, size, size)
-            sys.stdout = sys.__stdout__
-            return pixbuf
-        except:
-            sys.stdout = sys.__stdout__
-            raise
+        pixbuf = gtk.gdk.pixbuf_new_from_file_at_size(self.svgTempName, size, size)
+        return pixbuf
 
     
     def __inkscapeRender(self, size):
@@ -354,7 +291,7 @@ class Interface(object):
 
         self.filename = filename
 
-        self.xml = gtk.glade.XML('clipartbrowser.glade')
+        self.xml = gtk.glade.XML('clipartbrowser.glade', 'mainwindow')
         self.xml.signal_autoconnect(self)
 
         self.repoTree = repotree
@@ -364,28 +301,21 @@ class Interface(object):
         categoryColumn.add_attribute(cellRenderer, 'text', 1)
         self.browsepane.append_column(categoryColumn)
         self.browsepane.set_model(self.repoTree)
+
+#       Columns are:
+#           xml
+#           icon pixbuf
+#           marked-up title
+#           metadata (the original dict)
+        self.store = gtk.ListStore(str, gtk.gdk.Pixbuf, str, object)
         self.iconview = self.xml.get_widget('iconview')
+        self.iconview.set_model(self.store)
+        self.iconview.set_pixbuf_column(1)
+        self.iconview.set_markup_column(2)
 
-##        Columns are xml, icon pixbuf, preview pixbuf, marked-up title, raw title, artist, keywords
-##        self.store itself is accessed as a property
-#        self.__storeIndex = 0
-#        self.__storeList = [gtk.ListStore(str, gtk.gdk.Pixbuf, gtk.gdk.Pixbuf, str, str, str, str)]
-#        self.__firstSearch = True
-#        self.__queriesList = ['']
-
-#        self.window = self.xml.get_widget('mainwindow')
-#        self.statusbar = self.xml.get_widget('statusbar')
-#        self.statuscontext = self.statusbar.get_context_id('searching')
-
-##        The main icon browsing box
-#        self.iconview = self.xml.get_widget('iconview')
-#        self.iconview.set_model(self.store)
-#        self.iconview.set_pixbuf_column(1)
-#        self.iconview.set_markup_column(3) # markup is required to make text small enough
-
-#        self.searchbox = self.xml.get_widget('searchbox')
-#        self.previewImg = self.xml.get_widget('previewImg')
-#        self.previewLabel = self.xml.get_widget('previewlabel')
+        self.window = self.xml.get_widget('mainwindow')
+        self.statusbar = self.xml.get_widget('statusbar')
+        self.statuscontext = self.statusbar.get_context_id('searching')
 
 #        self.popupmenu = self.xml.get_widget('popupmenu')
 #        if self.config.has_option('main', 'inkviewcmd') and self.config.get('main', 'inkviewcmd'):
@@ -413,22 +343,49 @@ class Interface(object):
             os.delete(self.inkviewtmp)
         except:
             pass
-    
-    def __getStore(self):
-        return self.__storeList[self.__storeIndex]
-    def __getQuery(self):
-        return self.__queriesList[self.__storeIndex]
-    
-    store = property(__getStore) # The actual gtk.ListStore being displayed currently
-    query = property(__getQuery)
 
+    def on_browsepane_cursor_changed(self, treeview):
+        path, column = self.browsepane.get_cursor()
+        selectedRow = self.repoTree.get_iter(path)
+        query, repos = self.repoTree.get(selectedRow, 0, 2)
+        results = self.repoTree.query(query, repos, statusCallback = self.searchUpdate)
+        self.statusbar.push(self.statuscontext, 'Found %i images... rendering images' % len(results))
+        for i in range(3): # Give the statusbar message a chance to be shown
+            gtk.main_iteration(False)
+        print 'found %i results' % len(results)
+        self.store.clear()
+        for xml, metadata in results:
+            self.store.append(self.makeStoreItem(xml, metadata))
+            print 'rendered item'
+
+    def on_search_activate(self, widget):
+        xml = gtk.glade.XML('clipartbrowser.glade', 'searchbox')
+        dialog = xml.get_widget('searchbox')
+        inputbar = xml.get_widget('searchbar')
+        response = dialog.run()
+        dialog.destroy()
+        if response == gtk.RESPONSE_OK:
+            query = inputbar.get_text()
+            path = self.repoTree.addSearch(query)
+            print 'path:', path
+            self.browsepane.set_cursor(path)
+
+    def on_clearsearches_activate(self, widget):
+        self.repoTree.clearSearches()
+        self.browsepane.set_cursor(self.repoTree.getSearchRowPath())
+
+    def on_about_activate(self, widget):
+        dialog = gtk.glade.XML('clipartbrowser.glade', 'aboutdialog')
+        dialog.show()
+        
+    
     def on_copy_activate(self, widget):
         "Copy the currently selected image to the clipboard"
         selected = self.iconview.get_selected_items()
         if len(selected) is 0:
             contents = ''
         else:
-            contents = self.store[selected[0][0]][0]
+            contents = self.store[selected[0][0]][0] # the image xml
         self.clipboard.clear()
         self.clipboard.set_with_data(self.ipcTargets, self.clipboard_get, self.clipboard_clear, contents)
 
@@ -444,7 +401,7 @@ class Interface(object):
         if len(selected) is 0:
             contents = ''
         else:
-            contents = self.store[selected[0][0]][0]
+            contents = self.store[selected[0][0]][0] # the image xml
         selection_data.set(selection_data.target, 8, contents)
 
 #    FIXME: This needs to behave more intelligently when certain metadata values don't exist
@@ -454,17 +411,12 @@ class Interface(object):
         item = []
         item.append(xml)                     # index 0, the xml
         item.append(self.makePixbuf(xml, self.smallsize))    # index 1, icon pixbuf
-        item.append(self.makePixbuf(xml, self.largesize))    # index 2, preview pixbuf
         title = metadata.get('title', '')
         if title:
             item.append('<small>%s</small>' % title)    # index 3, marked-up title
-            item.append(title)                # index 4, raw title
         else:
             item.append('<small><i>No title</i></small>')
-            item.append('')
-        item.append(metadata.get('artist'))            # index 5, artist
-        item.append(';;'.join(metadata.get('keywords', [])))     # index 6, keywords
-
+        item.append(metadata)
         return item
 
     def on_mainwindow_delete_event(self, widget, event):
@@ -491,20 +443,6 @@ class Interface(object):
             xml = self.store[paths[0][0]][0]
             file(self.inkviewtmp, 'w').write(xml)
         subprocess.call('%s %s' % (self.inkviewcmd, self.inkviewtmp), shell=True)
-
-    def on_backbutton_clicked(self, widget):
-        if self.__storeIndex is not 0:
-            self.__storeIndex -= 1
-            self.iconview.set_model(self.store)
-            self.searchbox.set_text(self.query)
-            self.changeSelected(None)
-
-    def on_forwardbutton_clicked(self, widget):
-        if self.__storeIndex != len(self.__storeList) - 1:
-            self.__storeIndex += 1
-            self.iconview.set_model(self.store)
-            self.searchbox.set_text(self.query)
-            self.changeSelected(None)
 
     def on_searchbox_activate(self, widget):
         "Perform a search"

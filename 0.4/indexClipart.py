@@ -47,7 +47,8 @@ def makeIndex(rootdir, indexFile='index.dat'):
             if dirpath != rootdir:
                 parentCategory, catName = os.path.split(dirpath[len(rootdir) + 1:])
                 el = xmlDoc.createElement('category')
-                el.setAttribute('name', catName.capitalize())
+                el.setAttribute('name', catName)
+                el.setAttribute('id', dirpath[len(rootdir) + 1:])
                 xmlPaths[parentCategory].appendChild(el)
                 xmlPaths[dirpath[len(rootdir) + 1:]] = el
 
