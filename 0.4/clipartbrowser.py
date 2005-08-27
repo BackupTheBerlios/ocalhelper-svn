@@ -73,7 +73,7 @@ class RepoTree(gtk.TreeStore):
         for repo in self.repositories:
             self.__addRepo(repo)
 #       After all repos are added, add the "Search Results" group, which searches through ALL repositories
-        self.searchResultsRow = self.append(None, ['', 'Search Results', self.repositories, None])
+        self.searchResultsRow = self.append(None, ['', 'Recent searches', self.repositories, None])
 
     @staticmethod
     def query(q, repos, maxResults=None, statusCallback=None):
@@ -94,16 +94,15 @@ class RepoTree(gtk.TreeStore):
                     name = getattr(repo, 'title', '')
                     statusCallback('Searching %s...' % name)
                 results = repo.query(q) # A list of id, hash duples
-                for ID, hash in results:
-                    if hash not in allHashes or hash is None:
+                for ID, hash in results: # If the repo doesn't provide hashes, calculate it dynamically
+                    if hash is None:
+                        hash = md5.new(xml).hexdigest()
+                    if hash not in allHashes:
                         allHashes.append(hash)
                         xml, metadata = repo.getImage(ID)
-                        if hash is None:
-                            hash = md5.new(xml).hexdigest()
-                            if hash in allHashes:
-                                continue
                         if metadata is None:
                             metadata = getMetadata(xml)
+                        metadata['MD5 hash'] = hash
                         allImages.append((xml, metadata)) # an xml, metadata duple
                         if maxResults and len(allHashes) == maxResults:
                             raise MaxResults
@@ -297,9 +296,9 @@ class Interface(object):
         self.repoTree = repotree
         self.browsepane = self.xml.get_widget('browsepane')
         cellRenderer = gtk.CellRendererText()
-        categoryColumn = gtk.TreeViewColumn('Categories', cellRenderer)
-        categoryColumn.add_attribute(cellRenderer, 'text', 1)
-        self.browsepane.append_column(categoryColumn)
+        self.categoryColumn = gtk.TreeViewColumn('Categories', cellRenderer)
+        self.categoryColumn.add_attribute(cellRenderer, 'text', 1)
+        self.browsepane.append_column(self.categoryColumn)
         self.browsepane.set_model(self.repoTree)
 
 #       Columns are:
@@ -317,25 +316,20 @@ class Interface(object):
         self.statusbar = self.xml.get_widget('statusbar')
         self.statuscontext = self.statusbar.get_context_id('searching')
 
-#        self.popupmenu = self.xml.get_widget('popupmenu')
-#        if self.config.has_option('main', 'inkviewcmd') and self.config.get('main', 'inkviewcmd'):
-#            self.inkviewcmd = self.config.get('main', 'inkviewcmd')
-#            ivItem = gtk.MenuItem('Preview with Inkview')
-#            ivItem.connect('activate', self.inkview)
-#            self.popupmenu.append(ivItem)
-#            ivItem.show()
-#            self.inkviewtmp = tempfile.mkstemp(suffix='.svg')[1]
+        if self.config.has_option('main', 'inkviewcmd') and self.config.get('main', 'inkviewcmd'):
+            self.inkviewcmd = self.config.get('main', 'inkviewcmd')
+            self.inkviewtmp = tempfile.mkstemp(suffix='.svg')[1]
+        else:
+            self.inkviewcmd = None
 
-#        self.changeSelected(None)
-
-#        gtk-style targets for ipc, i.e. dnd and clipboard-copy
-#        self.ipcTargets = [('image/svg+xml', 0, 0)]
+#        gtk-style targets for ipc, i.e. d-n-d and clipboard-copy
         self.ipcTargets = [('image/svg', 0, 0)]
 
         self.iconview.drag_source_set(gtk.gdk.BUTTON1_MASK, self.ipcTargets, gtk.gdk.ACTION_COPY)
         self.iconview.connect('drag_data_get', self.drag_data_get)
 
         self.clipboard = gtk.Clipboard(selection='CLIPBOARD')
+
     
     def __del__(self):
         "Cleanup the inkview temp file"
@@ -344,6 +338,53 @@ class Interface(object):
         except:
             pass
 
+    def on_imageinfo_activate(self, widget):
+#       Setup the image info window
+        infoXML = gtk.glade.XML('clipartbrowser.glade', 'infowindow')
+        infoXML.signal_autoconnect(self)
+        self.infowindow = infoXML.get_widget('infowindow') # note that this is initially invisible
+        self.infotable = infoXML.get_widget('metadata_table')
+        self.infoimage = infoXML.get_widget('infoimage')
+        paths = self.iconview.get_selected_items()
+
+        if paths:
+#           Show the preview image
+            pixbuf = self.makePixbuf(self.store[paths[0][0]][0], 250)
+            self.infoimage.set_from_pixbuf(pixbuf)
+
+#           Show the metadata
+            metadata = self.store[paths[0][0]][3].items()
+            self.infotable.resize(0,0)
+            self.infotable.resize(len(metadata), 2)
+            for i, data in enumerate(sorted(metadata)):
+                key, value = data
+                keyLabel = gtk.Label('<b>%s</b>' % key.capitalize())
+                keyLabel.set_use_markup(True)
+                self.infotable.attach(keyLabel, 0, 1, i, i + 1)
+
+#               value might be a string, a sequence, or something else
+                if isinstance(value, basestring):
+                    valueLabel = gtk.Label(value)
+                elif hasattr(value, '__iter__'): # if its a sequence of some sort, like keywords
+                    valueLabel = gtk.Label(', '.join(value))
+                else:
+                    valueLabel = gtk.Label(str(value))
+                valueLabel.set_selectable(True)
+                valueLabel.set_width_chars(35)
+
+                keyLabel.wrap = True
+                keyLabel.set_alignment(0,0)
+                valueLabel.wrap = True
+                valueLabel.set_alignment(0,0)
+                keyLabel.show()
+                valueLabel.show()
+                self.infotable.attach(valueLabel, 1, 2, i, i + 1)
+                self.infowindow.show()
+    def on_infowindow_delete_event(self, widget, event):
+        print 'deleting info window'
+        self.infowindow.hide()
+        return True
+    
     def on_browsepane_cursor_changed(self, treeview):
         path, column = self.browsepane.get_cursor()
         selectedRow = self.repoTree.get_iter(path)
@@ -367,7 +408,7 @@ class Interface(object):
         if response == gtk.RESPONSE_OK:
             query = inputbar.get_text()
             path = self.repoTree.addSearch(query)
-            print 'path:', path
+            self.browsepane.expand_row(self.repoTree.getSearchRowPath(), False)
             self.browsepane.set_cursor(path)
 
     def on_clearsearches_activate(self, widget):
@@ -375,7 +416,7 @@ class Interface(object):
         self.browsepane.set_cursor(self.repoTree.getSearchRowPath())
 
     def on_about_activate(self, widget):
-        dialog = gtk.glade.XML('clipartbrowser.glade', 'aboutdialog')
+        dialog = gtk.glade.XML('clipartbrowser.glade', 'aboutdialog').get_widget('aboutdialog')
         dialog.show()
         
     
@@ -436,88 +477,26 @@ class Interface(object):
                 widget.select_path(path)
                 self.popupmenu.popup(None, None, None, event.button, event.time)
     
-    def inkview(self, widget):
+    def on_preview_activate(self, widget):
         "Preview the currently selected image with inkview"
+
+#       FIXME: Code should be added here to try to preview with gdk as a fallback
+        if not self.inkviewcmd:
+            return
+
         paths = self.iconview.get_selected_items()
         if len(paths) > 0:
             xml = self.store[paths[0][0]][0]
             file(self.inkviewtmp, 'w').write(xml)
         subprocess.call('%s %s' % (self.inkviewcmd, self.inkviewtmp), shell=True)
 
-    def on_searchbox_activate(self, widget):
-        "Perform a search"
-        query = widget.get_text().strip()
-
-        if not self.__firstSearch:
-            del self.__storeList[self.__storeIndex + 1:]
-            del self.__queriesList[self.__storeIndex + 1:]
-            self.__storeList.append(gtk.ListStore(str, gtk.gdk.Pixbuf, gtk.gdk.Pixbuf, str, str, str, str))
-            self.__queriesList.append(query)
-            self.__storeIndex = len(self.__storeList) - 1 
-            self.iconview.set_model(self.store)
-        else:
-            self.__queriesList[0] = query
-        self.changeSelected(None)
-
-#        Update the UI so that users don't panic
-#        These things don't always actually display... needs some tuning
-        results = self.search(query, self.searchUpdate)
-        self.statusbar.push(self.statuscontext, '%i images found... rendering images' % len(results))
-        for i in range(3):
-            gtk.main_iteration(False)
-
-        for xml, metadata in results:
-            try:
-                self.store.append(self.makeStoreItem(xml, metadata))
-            except Exception, e:
-                pass # If an image couldn't be rendered, skip it
-        self.__firstSearch = False
-        self.statusbar.push(self.statuscontext, '%i images' % len(self.store))
-    
     def searchUpdate(self, msg):
         "Update the statusbar with the name of the repository currently being searched"
         self.statusbar.pop(self.statuscontext)
         self.statusbar.push(self.statuscontext, msg)
         gtk.main_iteration()
+        gtk.main_iteration()
 
-    def on_iconview_item_activated(self, widget, path):
-        imgXML = self.store[path[0]][0]
-        if not self.filename:
-            output =  imgXML
-        else: # If we're supposed to insert the clipart into an image provided on stdin
-            inputDoc = minidom.parseString(file(self.filename).read()).documentElement
-#            If the clipart svg cannot be parsed, this won't work...
-            newPic = minidom.parseString(imgXML).documentElement
-            inputDoc.appendChild(newPic)
-            output = inputDoc.toxml()
-            
-        if self.outFile is None:
-            print output
-        else:
-            file(self.outFile, 'w').write(output)
-        gtk.main_quit()
-
-    def on_iconview_selection_changed(self, widget, event=None):
-        "When the currently selected image changes"
-        selected = self.iconview.get_selected_items()
-        if selected:
-            selected = selected[0][0]
-        else:
-            selected = None
-        if selected != self.selected:
-            self.changeSelected(selected)
-    
-#    Change the preview image and labels
-    def changeSelected(self, path):
-        "Sync the preview pane with the currently selected item"
-        if path is not None:
-            self.previewImg.set_from_pixbuf(self.store[path][2])
-            label = '<b>Title</b>: %s\n<b>Artist</b>: %s\n<b>Keywords</b>: %s' % (self.store[path][4], self.store[path][5], ', '.join(self.store[path][6].split(';;')))
-            self.previewLabel.set_markup(label)
-        else:
-            self.previewImg.set_from_pixbuf(None)
-            self.previewLabel.set_markup('')
-        self.selected = path
     
 class BadConfigError(Exception):
     "The configuration file is missing required values"
