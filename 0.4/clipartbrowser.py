@@ -327,11 +327,11 @@ class Interface(object):
                 self.imagemenu.prepend(menuitem)
                 menuitem.show()
                 cmd = config.get('externalviewers', viewer)
-                menuitem.connect('activate', self.on_externalviewer_activated, cmd)
+                menuitem.connect('activate', self.on_externalviewer_activate, cmd)
             self.toolbar = self.xml.get_widget('toolbar')
             previewButton = gtk.ToolButton('gtk-edit')
             previewButton.set_label('Open in %s' % externalViewers[0].strip().title())
-            previewButton.connect('clicked', self.on_externalviewer_activated, config.get('externalviewers', externalViewers[0]))
+            previewButton.connect('clicked', self.on_externalviewer_activate, config.get('externalviewers', externalViewers[0]))
             self.toolbar.insert(previewButton, 2)
             previewButton.show()
 
@@ -438,6 +438,36 @@ class Interface(object):
     def on_about_activate(self, widget):
         dialog = gtk.glade.XML('clipartbrowser.glade', 'aboutdialog').get_widget('aboutdialog')
         dialog.show()
+
+    def on_saveimage_activate(self, widget):
+
+        selected = self.iconview.get_selected_items()
+        if not selected: # If the user tries to save when no image is selected
+            d = gtk.MessageDialog(self.window, gtk.DIALOG_MODAL, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, 'No image selected')
+            d.run()
+            d.destroy()
+            return
+
+        svgFilter = gtk.FileFilter()
+        svgFilter.add_mime_type('image/svg')
+        svgFilter.add_mime_type('image/svg')
+        svgFilter.add_mime_type('image/svg+xml')
+        svgFilter.set_name('SVG Images')
+        dialog = gtk.FileChooserDialog(title='Save SVG image', buttons=('Cancel', gtk.RESPONSE_CANCEL, 'Save', gtk.RESPONSE_OK))
+        dialog.add_filter(svgFilter)
+        dialog.set_action(gtk.FILE_CHOOSER_ACTION_SAVE)
+        response = dialog.run()
+        filename = dialog.get_filename()
+        dialog.destroy()
+        if response == gtk.RESPONSE_OK:
+            xml = self.store[selected[0][0]][0]
+            try:
+                file(filename, 'w').write(xml)
+            except:
+                d = gtk.MessageDialog(self.window, gtk.DIALOG_MODAL, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, 'Unable to save to file: ' + filename)
+                d.show()
+                d.run()
+                d.destroy()
         
     
     def on_copy_activate(self, widget):
@@ -497,7 +527,7 @@ class Interface(object):
                 widget.select_path(path)
                 self.popupmenu.popup(None, None, None, event.button, event.time)
     
-    def on_externalviewer_activated(self, widget, cmd=None):
+    def on_externalviewer_activate(self, widget, cmd=None):
         "Preview the currently selected image with inkview"
 
         if not cmd:
@@ -508,7 +538,8 @@ class Interface(object):
         if len(paths) > 0:
             xml = self.store[paths[0][0]][0]
             file(self.inkviewtmp, 'w').write(xml)
-        subprocess.call('%s %s' % (cmd, self.inkviewtmp), shell=True)
+#       It might be nice to check for errors here (but then again, the timing would be tricky)
+        subprocess.Popen('%s %s' % (cmd, self.inkviewtmp), shell=True)
 
     def searchUpdate(self, msg):
         "Update the statusbar with the name of the repository currently being searched"
