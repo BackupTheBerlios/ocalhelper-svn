@@ -22,27 +22,39 @@ import os
 import shlex
 
 class API:
-	title = 'Local Clip Art'
-	def __init__(self, config):
-		self.repodir = config.get('localocal', 'repodir')
-		indexFile = config.get('localocal', 'indexfile')
-		index = shelve.open(indexFile, writeback=False)
-		self.kwIndex = index['keywords']
-		self.pathIndex = index['paths']
-                self.catsXML = index['catsXML']
+    title = 'Local Clip Art'
+    def __init__(self, config):
+        self.repodir = config.get('localocal', 'repodir')
+        indexFile = config.get('localocal', 'indexfile')
+        index = shelve.open(indexFile, writeback=False)
+        self.kwIndex = index['keywords']
+        self.pathIndex = index['paths']
+        self.catIndex = index['categories']
+        self.catsXML = index['catsXML']
 
-	def query(self, q):
-		keywords = [word.lower().replace(' ', '') for word in shlex.split(q)]
-		if len(keywords) is 0:
-			return []
-		results = self.kwIndex.get(keywords[0], set())
-		for word in keywords:
-			# searching for "cat dog" means "cat AND dog"... i.e. intersection
-			results = results.intersection(self.kwIndex.get(word, set()))
-		return [(img[0], img[1]) for img in results]
+    def query(self, q):
+        "Query using some custom query string format"
+        queryTerms = [word.lower().replace(' ', '') for word in shlex.split(q)]
+        if len(queryTerms) is 0:
+            return []
+        results = None
+        
+        for term in queryTerms:
+            results = self.__processTerm(term, results)
+        return [(img[0], img[1]) for img in results]
 
-	def getImage(self, ID):
-		# The second element should be a metadata dict, but we'll skip that for now
-		img = self.pathIndex[ID]
-		m = {'title':img[2], 'artist':img[3], 'keywords':img[4]}
-		return (file(os.path.join(self.repodir, ID)).read(), m)
+    def __processTerm(self, term, results):
+        "Given a query term and a set of results retrieved so far, return the results with the new term factored in"
+        if term.startswith('category:'):
+            r = self.catIndex.get(term[len('category:'):], set()) 
+        else:
+            r = self.kwIndex.get(term, set())
+        if results is None: # If this is the first query term in a list
+            return r
+        return results.intersection(r)
+
+    def getImage(self, ID):
+        # The second element should be a metadata dict, but we'll skip that for now
+        img = self.pathIndex[ID]
+        m = {'title':img[2], 'artist':img[3], 'keywords':img[4]}
+        return (file(os.path.join(self.repodir, ID)).read(), m)

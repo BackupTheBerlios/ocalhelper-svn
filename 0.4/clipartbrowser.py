@@ -111,14 +111,77 @@ class Searcher:
 
 class RepoTree(gtk.TreeStore):
     "A gtk tree model for storing the category hierarchies of loaded repositories"
-    def __init__(self):
 
-#       Columns are id, label (often the same as id), repository (the repository object itself)
-        gtk.TreeStore.__init__(self, str, str, object)
+    def __init__(self, config):
 
+        try:
+            repoNames =  [word.strip() for word in config.get('main', 'modules').split(';') if word.strip()]
 
-        self.repositories = []
-        self.searchResultsRow = self.append(None, ['searchResults', 'Search Results', None])
+            if config.has_option('main', 'maxresults'):
+                self.maxResults = int(config.get('main', 'maxresults').strip())
+                assert self.maxResults >= 0
+            else:
+                self.maxResults = None
+        except Exception, e:
+            raise BadConfigError
+
+        self.repositories = [] # A list of (module, iscache) duples... 
+        self.errorModules = []
+        for name in repoNames: # for each repo name, try to load a module with that name and create an api object
+            try:
+                package = __import__('modules.%s'  % name) # we look for modules in the "modules" package
+                mod = getattr(package, name)
+#                Load a repo api instance, giving it its config info as a dict
+                self.repositories.append(mod.API(config))
+            except:
+                self.errorModules.append(name)
+
+        if len(self.repositories) is 0:
+            raise NoRepositoriesError
+ 
+#       Columns are:
+#           the query string used to produce this view
+#           the on-screen label for this view
+#           the list of repositories searched to produce this view
+#           old search results (you can store them here to avoid having to do the search again)
+        gtk.TreeStore.__init__(self, str, str, object, object)
+
+        for repo in self.repositories:
+            self.__addRepo(repo)
+#       After all repos are added, add the "Search Results" group, which searches through ALL repositories
+        self.searchResultsRow = self.append(None, ['', 'Search Results', self.repositories, None])
+
+    @staticmethod
+    def query(q, repos, maxResults=None, statusCallback=None):
+
+#        We uniquely identify images by the md5 hash of their xml contents, which
+#        repositories are required to return (we could calculate it ourselves, but
+#        that's a waste of time).  Duplicate images are filtered out of search results this way.
+        allHashes = [] 
+        allImages = []
+        try:
+            for repo in repos:
+#               Let the gui know what repo we're currently searching via a callback
+                if callable(statusCallback):
+                    name = getattr(repo, 'title', '')
+                    statusCallback('Searching %s...' % name)
+                results = repo.query(q) # A list of id, hash duples
+                for ID, hash in results:
+                    if hash not in allHashes or hash is None:
+                        allHashes.append(hash)
+                        xml, metadata = repo.getImage(ID)
+                        if hash is None:
+                            hash = md5.new(xml).hexdigest()
+                            if hash in allHashes:
+                                continue
+                        if metadata is None:
+                            metadata = getMetadata(xml)
+                        allImages.append((xml, metadata)) # an xml, metadata duple
+                        if maxResults and len(allHashes) == maxResults:
+                            raise MaxResults
+        except MaxResults: # we're using exceptions as goto statements.... the horror!
+            pass
+        return allImages # a list of xml, metadata duples
 
     def __startElementHandler(self, name, attrs):
         if name == 'category':
@@ -126,21 +189,20 @@ class RepoTree(gtk.TreeStore):
                 ID = attrs['id']
             else:
                 ID = attrs['name']
-            iter = self.append(self.path[-1], [ID, attrs['name'], self.__currentRepo])
-            self.path.append(iter)
+            newRow = ['category:"%s"' % ID, attrs['name'], self.__currentRepo, None]
+            iter = self.append(self.path[-1], newRow) #self.path[-1] is the parent category of this category
+            self.path.append(iter) # record that we've descended one step into the hierarchy
     def __endElementHandler(self, name):
         if name == 'category':
-            self.path.pop()
+            self.path.pop() # record that we've ascended one step in the hierarchy
 
 #   repo is a repository module api object
-    def addRepo(self, repo): 
+    def __addRepo(self, repo): 
         "Load a repository module"
-        self.repositories.append(repo)
 
 #       All repositories get a row in the browse pane, even if they have no subcategories
-#       This inserts the new repository just before the search results item, so they're still in insertion order
-        topRow = ['/', repo.title, repo]
-        iter = self.insert(None, len(self) - 1, row=topRow)
+        topRow = ['category:"/"', repo.title, (repo,), None]
+        iter = self.append(None, topRow)
         self.path = [iter]
 
         xml = repo.catsXML
@@ -281,14 +343,11 @@ class Interface(object):
     smallsize = 80     # Dimensions of browse icons
     largesize = 240    # Dimensions of preview images 
 
-    def __init__(self, config, searcher, repotree, renderer, outFile=None, filename=None):
+    def __init__(self, config, repotree, renderer, outFile=None, filename=None):
         "Modules is a list of repository module api objects used for querying"
 
         self.config = config
         self.outFile = outFile
-
-        assert callable(searcher)
-        self.search = searcher
 
         assert callable(renderer)
         self.makePixbuf = renderer
@@ -562,13 +621,10 @@ if __name__ == '__main__':
     if not config.read(configPaths):
         sys.exit('Unable to find configuration file; looking at %s' % configPaths)
     try:
-        searcher = Searcher(config)
-        repobrowser = RepoTree()
-        for repo, cache in searcher.repos:
-            repobrowser.addRepo(repo)
+        repobrowser = RepoTree(config)
     except NoRepositoriesError:
         sys.exit('Error: no repositories were able to be loaded.  Check your config file and repository module dir')
     renderer = Renderer(config)
-    interface = Interface(config, searcher, repobrowser, renderer, outFile=outFile, filename=inputFilename)
+    interface = Interface(config, repobrowser, renderer, outFile=outFile, filename=inputFilename)
     os.chdir(origDir) # We switch back to orig dir so that writing output to a file works as expected
     gtk.main()

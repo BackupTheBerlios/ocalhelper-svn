@@ -47,7 +47,7 @@ def makeIndex(rootdir, indexFile='index.dat'):
             if dirpath != rootdir:
                 parentCategory, catName = os.path.split(dirpath[len(rootdir) + 1:])
                 el = xmlDoc.createElement('category')
-                el.setAttribute('name', catName)
+                el.setAttribute('name', catName.capitalize())
                 xmlPaths[parentCategory].appendChild(el)
                 xmlPaths[dirpath[len(rootdir) + 1:]] = el
 
@@ -73,9 +73,9 @@ def makeIndex(rootdir, indexFile='index.dat'):
                             categoryIndex[category].add(c)
 			for word in m.get('keywords', []):
 				if kwIndex.has_key(word):
-					kwIndex[word].update([c])
+					kwIndex[word.lower()].update([c])
 				else:
-					kwIndex[word] = set([c])
+					kwIndex[word.lower()] = set([c])
 			if verbose:
 				print 'indexed', fullpath
 	persist = shelve.open(indexFile)
