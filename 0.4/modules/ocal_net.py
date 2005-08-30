@@ -22,7 +22,7 @@ from xml.parsers import expat
 import itertools
 
 class API:
-	title = 'Open Clip Art Library'
+	title = 'the Open Clip Art Library'
 	"An implementation of the clip art navigator repo api for ocal"
 
 	def __init__(self, config):

@@ -34,7 +34,6 @@ from xml.dom import minidom
 from xml.parsers import expat
 import webbrowser
 import time
-import gobject
 
 configPath = os.path.expanduser('~/.clipartbrowser/clipartbrowser.conf')
 
