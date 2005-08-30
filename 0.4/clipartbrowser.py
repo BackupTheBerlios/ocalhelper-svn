@@ -42,6 +42,7 @@ class RepoTree(gtk.TreeStore):
     "A gtk tree model for storing the category hierarchies of loaded repositories"
 
     def __init__(self, config):
+        self.config = config
 
         try:
             repoNames =  [word.strip() for word in config.get('main', 'modules').split(';') if word.strip()]
@@ -52,6 +53,7 @@ class RepoTree(gtk.TreeStore):
             else:
                 self.maxResults = None
         except Exception, e:
+            raise
             raise BadConfigError
 
         self.repositories = [] # A list of (module, iscache) duples... 
@@ -63,6 +65,7 @@ class RepoTree(gtk.TreeStore):
 #                Load a repo api instance, giving it its config info as a dict
                 self.repositories.append(mod.API(config))
             except:
+                raise
                 self.errorModules.append(name)
 
         if len(self.repositories) is 0:
@@ -100,11 +103,11 @@ class RepoTree(gtk.TreeStore):
                     statusCallback('Searching %s...' % name)
                 results = repo.query(q) # A list of id, hash duples
                 for ID, hash in results: # If the repo doesn't provide hashes, calculate it dynamically
+                    xml, metadata = repo.getImage(ID)
                     if hash is None:
                         hash = md5.new(xml).hexdigest()
                     if hash not in allHashes:
                         allHashes.append(hash)
-                        xml, metadata = repo.getImage(ID)
                         if metadata is None:
                             metadata = getMetadata(xml)
                         metadata['md5 hash'] = hash
@@ -169,6 +172,8 @@ class Renderer:
     "Given svg data and a size, returns a gdk pixbuf rendering of it"
 
     def __init__(self, config):
+
+        self.config = config
         
         if config.has_option('main', 'externalrenderercmd'):
             self.extCmd = Template(config.get('main', 'externalrenderercmd'))
@@ -198,13 +203,13 @@ class Renderer:
         f.close()
 
         try:
-            if self.renderMode == 'both': # try gdk, and if that doesn't work, use external renderer
+            if self.config.has_option('main', 'rendermode') and self.config.get('main', 'rendermode') == 'both': # try gdk, and if that doesn't work, use external renderer
                 try:
                     pixbuf = self.__gdkRender(size)
                     return self.__gdkRender(size)
                 except:
                     return self.__externalRender(size)
-            elif self.renderMode.startswith('ext'): # i.e. "external", "ext"
+            elif self.config.has_option('main', 'rendermode') and self.config.get('main', 'rendermode').startswith('ext'): # i.e. "external", "ext"
                 return self.__externalRender(size)
             else: # renderMode == 'gdk'
                 return self.__gdkRender(size)
@@ -220,6 +225,8 @@ class Renderer:
     
     def __externalRender(self, size):
         "Use an external program to convert image to png, then render"
+
+        self.extCmd = Template(self.config.get('main', 'externalrenderercmd'))
         cmd = self.extCmd.substitute(svgfile=self.svgTempName, pngfile=self.pngTempName, width=size, height=size)
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         retcode = p.wait()
@@ -344,11 +351,8 @@ class Interface(object):
             self.toolbar.insert(previewButton, 2)
             previewButton.show()
 
-        if self.config.has_option('main', 'inkviewcmd') and self.config.get('main', 'inkviewcmd'):
-            self.inkviewcmd = self.config.get('main', 'inkviewcmd')
+        if self.config.has_section('externalviewers') and len(self.config.options('externalviewers')) > 0:
             self.inkviewtmp = tempfile.mkstemp(suffix='.svg')[1]
-        else:
-            self.inkviewcmd = None
 
 #        gtk-style targets for ipc, i.e. d-n-d and clipboard-copy
         self.ipcTargets = [('image/svg', 0, 0)]
@@ -381,6 +385,9 @@ class Interface(object):
         if len(reposmenu_menu.get_children()) == 0:
             self.menubar.remove(reposmenu)
 
+    def on_settings_activate(self, widget):
+        settings = SettingsInterface(self.config, configPath)
+
 
     def __del__(self):
         "Cleanup the inkview temp file"
@@ -406,7 +413,6 @@ class Interface(object):
 
 #           Show the metadata
             metadata = self.store[paths[0][0]][3].items()
-            self.infotable.resize(0,0)
             self.infotable.resize(len(metadata), 2)
             for i, data in enumerate(sorted(metadata)):
                 key, value = data
@@ -440,15 +446,19 @@ class Interface(object):
         path, column = self.browsepane.get_cursor()
         selectedRow = self.repoTree.get_iter(path)
         query, repos = self.repoTree.get(selectedRow, 0, 2)
-        results = self.repoTree.query(query, repos, statusCallback = self.searchUpdate)
-        self.statusbar.push(self.statuscontext, 'Found %i images... rendering images' % len(results))
-        for i in range(3): # Give the statusbar message a chance to be shown
+        if self.config.has_option('main', 'maxresults'):
+            maxResults = int(self.config.get('main', 'maxresults'))
+        else:
+            maxResults = 0
+        results = self.repoTree.query(query, repos, maxResults=maxResults, statusCallback = self.searchUpdate)
+        msg = self.statusbar.push(self.statuscontext, 'Found %i images... rendering images' % len(results))
+        while gtk.events_pending(): # Give the statusbar message a chance to be shown
             gtk.main_iteration(False)
-        print 'found %i results' % len(results)
         self.store.clear()
         for xml, metadata in results:
             self.store.append(self.makeStoreItem(xml, metadata))
-            print 'rendered item'
+        self.statusbar.remove(self.statuscontext, msg)
+        self.statusbar.push(self.statuscontext, '%i images found' % len(self.store))
 
     def on_search_activate(self, widget):
         xml = gtk.glade.XML('clipartbrowser.glade', 'searchbox')
@@ -573,7 +583,6 @@ class Interface(object):
         "Preview the currently selected image with inkview"
 
         if not cmd:
-            print 'no command given'
             return
 
         paths = self.iconview.get_selected_items()
@@ -587,10 +596,66 @@ class Interface(object):
         "Update the statusbar with the name of the repository currently being searched"
         self.statusbar.pop(self.statuscontext)
         self.statusbar.push(self.statuscontext, msg)
-        gtk.main_iteration()
-        gtk.main_iteration()
+        while gtk.events_pending():
+            gtk.main_iteration()
 
-    
+class SettingsInterface:
+
+    def __init__(self, config, outfile):
+        self.config = config
+        self.outfile = outfile
+        self.xml = gtk.glade.XML('clipartbrowser.glade', 'settingswindow')
+        self.window = self.xml.get_widget('settingswindow')
+        self.cancelButton = self.xml.get_widget('settings_cancelbutton')
+        self.okButton = self.xml.get_widget('settings_okbutton')
+        self.renderModeInput = self.xml.get_widget('rendermodeinput')
+        self.extCmdInput = self.xml.get_widget('extcmdinput')
+        self.maxResultsInput = self.xml.get_widget('maxresultsinput')
+
+        self.cancelButton.connect('clicked', lambda widget: window.destroy())
+        self.okButton.connect('clicked', self.__saveSettings)
+
+#       Setup the render mode input widget
+        rendermode = self.config.get('main', 'rendermode')
+        if rendermode == 'both':
+            self.renderModeInput.set_active(2)
+        elif rendermode.startswith('ext'):
+            self.renderModeInput.set_active(1)
+        else:
+            self.renderModeInput.set_active(0)
+
+#       Setup the external rendering command widget
+        if self.config.has_option('main', 'externalrenderercmd'):
+            extCmd = self.config.get('main', 'externalrenderercmd')
+        else:
+            extCmd = ''
+        self.extCmdInput.set_text(extCmd)
+
+#       Setup the max results widget
+        self.maxResultsInput = self.xml.get_widget('maxresultsinput')
+        if self.config.has_option('main', 'maxresults'):
+            max = int(self.config.get('main', 'maxresults'))
+        else:
+            max = 0
+        self.maxResultsInput.set_value(max)
+
+    def __saveSettings(self, widget):
+        rendermode = self.renderModeInput.get_active()
+        if rendermode == 2:
+            rendermode = 'both'
+        elif rendermode == 1:
+            rendermode = 'external'
+        else:
+            rendermode = 'gdk'
+        self.config.set('main', 'rendermode', rendermode)
+        maxresults = self.maxResultsInput.get_value_as_int()
+        self.config.set('main', 'maxresults', str(maxresults))
+        extCmd = self.extCmdInput.get_text()
+        self.config.set('main', 'externalrenderercmd', extCmd)
+        self.config.write(file(self.outfile, 'w'))
+        self.window.destroy()
+
+
 class BadConfigError(Exception):
     "The configuration file is missing required values"
     pass
@@ -640,6 +705,4 @@ if __name__ == '__main__':
     interface = Interface(config, repobrowser, renderer, outFile=outFile, filename=inputFilename)
     os.chdir(origDir) # We switch back to orig dir so that writing output to a file works as expected
     gtk.threads_init()
-    gtk.threads_enter()
     gtk.main()
-    gtk.threads_leave()

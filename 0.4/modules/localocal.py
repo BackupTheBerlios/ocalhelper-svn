@@ -16,16 +16,16 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 """
-
 import shelve
 import os
 import shlex
 from xml.dom import minidom
 from xml.parsers import expat
 import md5
-
+import sys
 
 class API:
+    "A clip art browser repository module api object"
     title = 'Local Clip Art'
     def __init__(self, config):
         self.config = config
@@ -35,18 +35,18 @@ class API:
             index = shelve.open(indexFile, writeback=False)
             self.kwIndex = index['keywords']
         except KeyError:
-            foo = self.__indexGTK()
+            msg = "You have the local clip art repository enabled, but do not have a valid local clip art index.  You can create an index by selecting your top clip art directory below, or click cancel to skip loading this repository."
+            foo = self.__indexGTK(msg)
             if not foo:
                 raise Exception, "No clip art directory selected"
-            repodir, indexfile = foo
-            self.__updateConfig(os.path.expanduser('~/.clipartbrowser/clipartbrowser.conf'), repodir, indexfile)
+            repodir, indexFile = foo
+            self.__updateConfig(os.path.expanduser('~/.clipartbrowser/clipartbrowser.conf'), repodir, indexFile)
             index = shelve.open(indexFile, writeback=False)
             self.kwIndex = index['keywords']
         self.pathIndex = index['paths']
         self.catIndex = index['categories']
         self.catsXML = index['catsXML']
         self.actions = [('Index local clip art', self.indexGTK)]
-            
 
     def __updateConfig(self, configFile, repodir, indexfile):
         "Update the configuration file with a (possibly) new repository directory and index file path"
@@ -56,6 +56,8 @@ class API:
             c.add_section('localocal')
         c.set('localocal', 'repodir', os.path.abspath(repodir))
         c.set('localocal', 'indexfile', os.path.abspath(indexfile))
+        if not os.path.exists(os.path.dirname(configFile)):
+            os.mkdir(os.path.dirname(configFile))
         c.write(file(configFile, 'w'))
 
         self.config.set('localocal', 'repodir', os.path.abspath(repodir))
@@ -72,7 +74,7 @@ class API:
         gtk.main_quit()
         sys.exit()
 
-    def __indexGTK(self):
+    def __indexGTK(self, chooseMessage=None):
         "Provide a GTK interface to indexing local clip art and updating the config file"
 
         global gtk
@@ -80,32 +82,33 @@ class API:
         import gtk.glade
         xml = gtk.glade.XML('modules/localocal.glade')
         chooseDialog = xml.get_widget('indexchoosedialog')
+        chooseLabel = xml.get_widget('chooselabel')
+        if chooseMessage:
+            chooseLabel.set_text(chooseMessage)
         repodirButton = xml.get_widget('dirchoosebutton')
         response = chooseDialog.run()
         repodir = repodirButton.get_filename()
         chooseDialog.destroy()
-        if response == gtk.RESPONSE_OK:
-            print 'repodir chosen:', repodir
-        else:
+        if not response == gtk.RESPONSE_OK:
             return
+        
         waitDialog = xml.get_widget('indexwaitdialog')
         waitDialog.connect('delete-event', lambda a, b: True)
-        progressbar = xml.get_widget('progressbar')
+        progresslabel = xml.get_widget('progresslabel')
         def startDir(dirpath):
-            progressbar.set_text('Indexing %s...' % dirpath)
+            progresslabel.set_markup('<b>Indexing %s</b>' % dirpath)
             while gtk.events_pending():
                 gtk.main_iteration()
         interface = GTKInterface()
         interface.startDir = startDir
         i = Indexer(interface)
         waitDialog.show()
+        indexfile = os.path.abspath('modules/index.dat')
         while gtk.events_pending():
             gtk.main_iteration()
-        indexfile = os.path.abspath('modules/index.dat')
         i.index(repodir, indexfile)
         waitDialog.destroy()
         return (repodir, indexfile)
-
 
     def query(self, q):
         "Query using some custom query string format"
@@ -135,8 +138,8 @@ class API:
         return (file(os.path.join(self.repodir, ID)).read(), m)
 
 # Code for the indexer
-
 class Indexer:
+    "A class that handles the indexing of local clip art"
 
     def __init__(self, interface=None):
         self.interface = interface
@@ -212,17 +215,13 @@ class Indexer:
                 self.kwIndex[word.lower()] = set([c])
                 
     def __saveIndex(self):
-        print 'saving index'
+        if not os.path.exists(os.path.dirname(self.indexFile)):
+            os.mkdir(os.path.dirname(self.indexFile))
         persist = shelve.open(self.indexFile)
-        print 'saving keywords'
         persist['keywords'] = self.kwIndex
-        print 'saving paths'
         persist['paths'] = self.pathIndex
-        print 'saving categories'
         persist['categories'] = self.categoryIndex
-        print 'saving category xml'
         persist['catsXML'] = self.xmlDoc.toprettyxml()
-        print 'index saved'
 
 
 class _Metadata:
