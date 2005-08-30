@@ -32,9 +32,10 @@ class API:
         self.repodir = config.get('localocal', 'repodir')
         indexFile = config.get('localocal', 'indexfile')
         try:
+            assert os.path.exists(indexFile)
             index = shelve.open(indexFile, writeback=False)
             self.kwIndex = index['keywords']
-        except KeyError:
+        except:
             msg = "You have the local clip art repository enabled, but do not have a valid local clip art index.  You can create an index by selecting your top clip art directory below, or click cancel to skip loading this repository."
             foo = self.__indexGTK(msg)
             if not foo:

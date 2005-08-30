@@ -64,7 +64,6 @@ class RepoTree(gtk.TreeStore):
 #                Load a repo api instance, giving it its config info as a dict
                 self.repositories.append(mod.API(config))
             except:
-                raise
                 self.errorModules.append(name)
 
         if len(self.repositories) is 0:
