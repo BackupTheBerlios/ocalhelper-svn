@@ -611,7 +611,7 @@ class SettingsInterface:
         self.extCmdInput = self.xml.get_widget('extcmdinput')
         self.maxResultsInput = self.xml.get_widget('maxresultsinput')
 
-        self.cancelButton.connect('clicked', lambda widget: window.destroy())
+        self.cancelButton.connect('clicked', lambda widget: self.window.destroy())
         self.okButton.connect('clicked', self.__saveSettings)
 
 #       Setup the render mode input widget
