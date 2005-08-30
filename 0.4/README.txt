@@ -14,103 +14,89 @@ in the future.
 The author would like to thank Google for funding the development of
 this tool.
 
-USAGE
-
-To invoke the program directly, run the "clipartnav.py" program from
-the command line.  This is a Python script, and should be invoked
-however you generally invoke Python programs on your system.  If
-invoke without the "-f" option, it will print the contents of the
-selected clip
-art image to standard output (in the case of svg clip art, these
-contents are svg xml).  If invoked with the "-f" flag, it will write
-the selected clip art to the given filename.  For example, to have it
-write the selected clip art to the file "out.svg", run
-
-python clipartnav.py -f out.svg
-
-The script also takes one optional command line argument; an input
-document filename.  If given, the program will insert the selected
-clipart into the svg document indicated by the given filename before
-outputting the combined image.  This usage is primarily intended for
-use by Inkscape, and not expected to be used by users directly.
-
-You may also drag-and-drop images from the navigator into other
-appropriate programs.  Copy-paste functionality doesn't quite work
-yet, but is being worked on.
-
 INSTALL NOTES
 
-General
+The program should work out of the box; just run 
 
-The Clip Art Navigator REQUIRES Python 2.4, GTK 2.6, and PyGTK >= 2.6.  In
-addition, Inkscape 0.42 (from http://pyxml.sourceforge.net) is reccomended on
-Linux systems and is required on Windows systems.
+python clipartbrowser.py
 
-To install as a standalone program, simply unpack.  This distribution
-comes with two repository modules: localocal (for local system
-clipart) and ocal_net (remote access to the Open Clip Art Library).  You
-can choose to use one or both of these modules via the "modules"
-option under the "main" section in the configuration file
-(clipartnav.conf).  Modules are simply listed by their python name
-(i.e. the name of the file they're contained in in the modules
-directory, without the trailing ".py"), and are separated by a
-semicolon.  For example, to use both the localocal and ocal modules,
-have the modules line in your configuration file read:
+The first time you run it, it will probably ask you if you'd like to
+index your local clip art.  This is a very good idea.  Just select the
+root directory of your local clip art.  If you don't have any local
+clip art, I reccomend downloading the latest package from
+http://www.openclipart.org, and extracting it somewhere on your
+system.  Then, when the Clip Art Browser asks you where you keep your
+local clip art, provide the top directory that was extracted from the
+OCAL package.
 
-modules = localocal; ocal
+CONFIG FILE NOTES
 
-The ocal module works out of the box, but the localocal module
-requires a little bit of configuration.  First, download a recent OCAL
-release from http://openclipart.org, and extract it somewhere (we
-reccommend /usr/share/clipart if you have root access, but anywhere
-will do).  Then, index your clipart by running the included
-"indexClipart.py" script, passing in the root directory of your
-extracted clipart as the first argument.  There's an optional "-v"
-flag for verbose output that you'll probably want to use too.  For
-example, to index clip art at /usr/share/clipart , run
+I'll try to briefly explain the most important aspects of the
+configuration file here.  The configuration file should be kept either
+in the same directory as the clipartbrowser.py file (use this location
+for system wide configuration), or in a ".clipartbrowser" directory in
+a user's home directory.  The config file is broken up into sections,
+which are marked off by a line containing the section title enclosed
+in square brackets.  For example, the "main" section starts after the
+line
 
-python indexClipart.py -v /usr/share/clipart
+[main]
 
-Then, open the configuration file and set the "repodir" option under
-the "localocal" section to whatever directory you just used to index
-your clipart.  For example:
+The browser itself uses two sections: "main" and "externalviewers.
+The most important setting in the main section is the "modules" list.
+This should be a list of the names of repository modules that the
+browser should use, with modules separated by a semicolon.  Modules
+are actually just python files in the "modules" directory.  So if
+there's a "localocal.py" file in the modules directory, you can enable
+that module by including "localocal" in your modules list.  It helps
+performance to put faster repository modules (such as localocal) at
+the beginning of the list, and slower ones (such as ocal_net) at the
+end.  There are currently two repository modules included with the
+browser: localocal and ocal_net.  localocal lets you access local clip
+art, while ocal_net lets you access the Open Clip Art Library servers
+at http://openclipart.org .  
 
-[localocal]
-repodir = /usr/share/clipart
+Another important setting is "externalrenderercmd".  This lets you
+specify a program to help the browser render images that the its
+default renderer (GDK) can't handle.  On Windows systems, GDK can't
+handle any SVG images at all, so this setting is particularly
+important.  You use it to specify a command that can be run to
+transform an SVG image into a PNG image.  The command should simply be
+a string that can be typed at the command line to do the
+transformation.  The string allows placeholders for several dynamic
+values (placeholders begin with a dollar sign):
 
-Your localocal repository is now ready to use.  You also may want to
-copy your configuration file to the ".inkscape" directory in your home
-directory.  The Clip Art Navigator looks there and in the Inkscape
-extensions directory for the configuration file (if configuration
-files are found in both locations, the user file will be used when
-settings between the two conflict).
+$svgfile    The absolute filename of the svg file to be used as input
+$pngfile    The absolute filename of the png file to be used as output
+$width      The requested width of the output file, in pixels
+$height     The requested height of the output file, in pixels.
 
+Many users will want to use the Inkscape SVG editor as their external
+renderer.  To enable it on Linux machines, for example, you would have
+the externalrenderercmd line read:
 
-After installation, it is highly reccommended that you download a
-recent release of the Open Clip Art Library from
-http://openclipart.org.  Extract the release contents somewhere on
-your computer, and then run the modules/indexClipart.py script,
-passing the path to the directory where you extracted the clipart as
-the first argument.  You'll probably want to use the -v flag for
-verbose output.  For example:
+externalrenderercmd = inkscape $svgfile --export-png=$pngfile -w$width
 
-python indexClipart.py -v /usr/share/clipart
+A related setting is "rendermode".  This determines whether the
+browser renders images using GDK, your external renderer (described
+above), or by trying GDK and then using the external renderer if GDK
+fails (most users will want this setting).  The corresponding values
+it should be set to are "gdk", "external" and "both".
 
-(if your root clip art directory is /usr/share/clipart).  This script
-creates an index of your local clipart that the Clip Art Navigator can
-use for searching.
+The "maxresults" setting lets you set a maximum number of results to
+retrieve for a given search.  This can be useful when accessing slow
+repositories, to prevent unexpectedly large searches from stopping the
+program indefinitely.  If this setting is missing, or is set to 0,
+there is no limit on the number of results retrieved.
 
-Inkscape
+The "externalviewers" section lets you specify external image viewers
+or editors that can be launched from within the browser.  Each setting
+in this section should specify a label for the viewer as the key, and
+the command-line command for the viewer as the value.  For example, to
+enable Inkview as an external viewer on Linux systems, you would add
+the line
 
-To install the Clip Art Navigator as an Inkscape extension, simply extract the
-contents of the package to Inkscape's extensions directory (on Linux, this is
-typically /usr/local/share/inkscape/extensions).  Inkscape usage requires the
-following files to be present in that directory:
+Inkview = inkview
 
-clipartnav.py
-clipartnav.glade
-clipartnav.inx
-modules/__init__.py
-
-and whatever repository module files you want must be present in the modules
-directory.  
+to the [externalviewers] section.  The first viewer specified (if
+any), will be given a quick access icon on the browser toolbar.
