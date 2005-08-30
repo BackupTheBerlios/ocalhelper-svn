@@ -32,7 +32,11 @@ from cStringIO import StringIO
 import md5
 from xml.dom import minidom
 from xml.parsers import expat
+import webbrowser
+import time
+import gobject
 
+configPath = os.path.expanduser('~/.clipartbrowser/clipartbrowser.conf')
 
 class RepoTree(gtk.TreeStore):
     "A gtk tree model for storing the category hierarchies of loaded repositories"
@@ -287,6 +291,10 @@ class Interface(object):
         self.config = config
         self.outFile = outFile
 
+        self.preferencesDir = os.path.expanduser('~/.clipartbrowser')
+        if not os.path.exists(self.preferencesDir):
+            os.mkdir(self.preferencesDir)
+
         assert callable(renderer)
         self.makePixbuf = renderer
 
@@ -317,6 +325,7 @@ class Interface(object):
         self.window = self.xml.get_widget('mainwindow')
         self.statusbar = self.xml.get_widget('statusbar')
         self.statuscontext = self.statusbar.get_context_id('searching')
+        self.menubar = self.xml.get_widget('menubar')
 
 #       Setup launchers for any external viewers listed in the config file
         self.imagemenu = self.xml.get_widget('imagemenu_menu')
@@ -348,8 +357,31 @@ class Interface(object):
         self.iconview.connect('drag_data_get', self.drag_data_get)
 
         self.clipboard = gtk.Clipboard(selection='CLIPBOARD')
+        
+#       Repositories can offer gtk interfaces too... here we create menu items for whatever actions they need
+        reposmenu = self.xml.get_widget('repositoriesmenu')
+        reposmenu_menu = self.xml.get_widget('repositoriesmenu_menu')
+        placeholder = self.xml.get_widget('placeholder')
+        reposmenu_menu.remove(placeholder)
+        for repo in self.repoTree.repositories:
+            if not hasattr(repo, 'actions'):
+                continue
+            repoitem = gtk.MenuItem(repo.title)
+            repoitem.show()
+            reposmenu_menu.append(repoitem)
+            submenu = gtk.Menu()
+            submenu.show()
+            repoitem.set_submenu(submenu)
+            for label, method in repo.actions:
+                actionitem = gtk.MenuItem(label)
+                actionitem.show()
+                submenu.append(actionitem)
+                actionitem.connect('activate', method, configPath)
 
-    
+        if len(reposmenu_menu.get_children()) == 0:
+            self.menubar.remove(reposmenu)
+
+
     def __del__(self):
         "Cleanup the inkview temp file"
         try:
@@ -362,6 +394,7 @@ class Interface(object):
         infoXML = gtk.glade.XML('clipartbrowser.glade', 'infowindow')
         infoXML.signal_autoconnect(self)
         self.infowindow = infoXML.get_widget('infowindow') # note that this is initially invisible
+        self.infowindow.set_position(gtk.WIN_POS_MOUSE)
         self.infotable = infoXML.get_widget('metadata_table')
         self.infoimage = infoXML.get_widget('infoimage')
         paths = self.iconview.get_selected_items()
@@ -401,9 +434,7 @@ class Interface(object):
                 self.infowindow.show()
 
     def on_infowindow_delete_event(self, widget, event):
-        print 'deleting info window'
-        self.infowindow.hide()
-        return True
+        return False
     
     def on_browsepane_cursor_changed(self, treeview):
         path, column = self.browsepane.get_cursor()
@@ -438,6 +469,9 @@ class Interface(object):
     def on_about_activate(self, widget):
         dialog = gtk.glade.XML('clipartbrowser.glade', 'aboutdialog').get_widget('aboutdialog')
         dialog.show()
+
+    def on_webhelp_activate(self, widget):
+        webbrowser.open('http://openclipart.org/cgi-bin/wiki.pl?ClipArtBrowser')
 
     def on_saveimage_activate(self, widget):
 
@@ -485,6 +519,14 @@ class Interface(object):
 
     def clipboard_clear(self, clipboard, data):
         pass
+
+    def on_iconview_drag_begin(self, widget, context):
+        selected = self.iconview.get_selected_items()
+        if selected:
+            self.iconview.drag_source_set_icon_pixbuf(self.store[selected[0][0]][1])
+        else:
+            self.iconview.drag_source_set_icon_stock('gtk-dnd')
+
 
     def drag_data_get(self, widget, context, selection_data, info, timestamp):
         "Provide data to be copied in a drag-drop"
@@ -585,7 +627,9 @@ if __name__ == '__main__':
         inputFilename = None
 
     config = ConfigParser.SafeConfigParser()
-    configPaths = [os.path.expanduser('~/.inkscape/clipartbrowser.conf'), 'clipartbrowser.conf']
+
+#   The user file overrides any other file
+    configPaths = ['clipartbrowser.conf', configPath]
     if not config.read(configPaths):
         sys.exit('Unable to find configuration file; looking at %s' % configPaths)
     try:
@@ -595,4 +639,7 @@ if __name__ == '__main__':
     renderer = Renderer(config)
     interface = Interface(config, repobrowser, renderer, outFile=outFile, filename=inputFilename)
     os.chdir(origDir) # We switch back to orig dir so that writing output to a file works as expected
+    gtk.threads_init()
+    gtk.threads_enter()
     gtk.main()
+    gtk.threads_leave()

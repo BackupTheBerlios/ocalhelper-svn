@@ -19,7 +19,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 # Script for creating your own local clipart index for the localocal module
 
-import HTMLParser
 from xml.parsers import expat
 import itertools
 import os
@@ -30,20 +29,28 @@ from xml.dom import minidom
 
 verbose = False
 
-def makeIndex(rootdir, indexFile='index.dat'):
+def makeIndex(rootdir, indexFile='index.dat', verbose=False):
+        print 'makeIndex invoked:', rootdir, indexFile
 	rootdir = os.path.normpath(rootdir) # Remove the trailing slash, if any
 	kwIndex = {}
 	pathIndex = {}
         categoryIndex = {}
+        print 'indexes created'
 
+        if os.path.exists(indexFile):
+            os.remove(indexFile)
+ 
 #       These lines are for generating the xml description of the category hierarchy
+        print 'creating xml doc'
         xmlPaths = {}
         xmlDoc = minidom.Document()
         cat_hier = xmlDoc.createElement('category-hierarchy')
         xmlDoc.appendChild(cat_hier)
         xmlPaths[''] = cat_hier
+        print 'xml doc initialized'
 
 	for dirpath, subdirs, filenames in os.walk(rootdir):
+            print 'processing dir:', dirpath
             if dirpath != rootdir:
                 parentCategory, catName = os.path.split(dirpath[len(rootdir) + 1:])
                 el = xmlDoc.createElement('category')
@@ -55,19 +62,24 @@ def makeIndex(rootdir, indexFile='index.dat'):
 		for filename in filenames:
 			if not filename.endswith('.svg'):
 				continue
+                        print 'processing file:', filename
 			fullpath = os.path.join(dirpath, filename)
 			relpath = fullpath[len(rootdir) + 1:]
+                        print 'relpath:', relpath
 			try:
 				xml = file(fullpath).read()
 				m = getMetadata(xml)
+                                print 'metadata:', m
 			except: # If the metadata was not parsable, skip the image
 				if verbose:
 					print "couldn't parse metadata for %s, skipping image" % fullpath
 				continue
 			contentsHash = md5.new(xml).hexdigest()
+                        print 'hash:', contentsHash
 			c = (relpath, contentsHash, m.get('title', None), m.get('artist', None), tuple(m.get('keywords', None)))
 			pathIndex[relpath] = c
                         category = os.path.dirname(relpath)
+                        print 'category:', category
                         if not categoryIndex.has_key(category):
                             categoryIndex[category] = set([c])
                         else:
