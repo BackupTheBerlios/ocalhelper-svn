@@ -11,6 +11,7 @@
   <property name="modal">False</property>
   <property name="resizable">True</property>
   <property name="destroy_with_parent">False</property>
+  <property name="icon">./pixmaps/open_clip_art_library_logo_icon.svg</property>
   <property name="decorated">True</property>
   <property name="skip_taskbar_hint">False</property>
   <property name="skip_pager_hint">False</property>
@@ -570,7 +571,7 @@
 <widget class="GtkAboutDialog" id="aboutdialog">
   <property name="visible">True</property>
   <property name="destroy_with_parent">False</property>
-  <property name="name" translatable="yes">Clip Art Browser</property>
+  <property name="name" translatable="yes">Clip Art Browser 0.4</property>
   <property name="copyright" translatable="yes">Copyright 2005 Greg Steffensen</property>
   <property name="license" translatable="yes">		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
